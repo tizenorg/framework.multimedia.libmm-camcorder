@@ -456,33 +456,26 @@ _mmcamcorder_audio_command(MMHandleType handle, int command)
 					info->max_time = ((guint64)imax_time) * 1000; /* to millisecond */
 				}
 
-/*
-				//set data probe function	
-				gst_pad_add_buffer_probe(gst_element_get_pad(sc->element[_MMCAMCORDER_AUDIOSRC_SRC].gst, "src"), 						 
-								 G_CALLBACK(__mmcamcorder_audio_dataprobe_voicerecorder),							 
-								 hcamcorder); 								 
-*/								 
-/* TODO : check free space before recording start, need to more discussion */			
-#if 1 
 				dir_name = g_path_get_dirname(info->filename);
-				err = _mmcamcorder_get_freespace(dir_name, &free_space);
-				if((err == -1) || free_space <= (_MMCAMCORDER_AUDIO_MINIMUM_SPACE+(5*1024)))
-				{
-					_mmcam_dbg_err("No more space for recording - %s : [%" G_GUINT64_FORMAT "]\n ", dir_name, free_space);			
-					if(dir_name)
-					{
-						g_free(dir_name);
-						dir_name = NULL;
-					}				
-					return MM_MESSAGE_CAMCORDER_NO_FREE_SPACE;
-				}
-				if(dir_name)
-				{
+				if (dir_name) {
+					err = _mmcamcorder_get_freespace(dir_name, &free_space);
+
+					_mmcam_dbg_warn("current space for recording - %s : [%" G_GUINT64_FORMAT "]",
+					                dir_name, free_space);
+
 					g_free(dir_name);
 					dir_name = NULL;
+				} else {
+					_mmcam_dbg_err("failed to get directory name");
+					err = -1;
 				}
-#endif
-			}		
+
+				if ((err == -1) || free_space <= (_MMCAMCORDER_AUDIO_MINIMUM_SPACE+(5*1024))) {
+					_mmcam_dbg_err("OUT of STORAGE [err:%d or free space [%" G_GUINT64_FORMAT "] is smaller than [%d]",
+					               err, free_space, (_MMCAMCORDER_AUDIO_MINIMUM_SPACE+(5*1024)));
+					return MM_ERROR_OUT_OF_STORAGE;
+				}
+			}
 
 			ret = _mmcamcorder_gst_set_state(handle, pipeline, GST_STATE_PLAYING);
 			if(ret<0) {
