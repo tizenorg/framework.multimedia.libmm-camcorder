@@ -1068,6 +1068,8 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 		                                &use_aenc_queue);
 		if (use_aenc_queue) {
 			_MMCAMCORDER_ENCODEBIN_ELMGET(sc, _MMCAMCORDER_ENCSINK_AENC_QUE, "use-aenc-queue", err);
+			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_AENC_QUE].gst,"max-size-time",0);
+			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_AENC_QUE].gst,"max-size-buffers",0);
 		}
 	}
 
