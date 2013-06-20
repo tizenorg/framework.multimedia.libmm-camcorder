@@ -2032,6 +2032,9 @@ int __mmcamcorder_set_exif_basic_info(MMHandleType handle, int image_width, int 
 
 	/*21. EXIF_TAG_EXPOSURE_BIAS_VALUE*/
 	value = 0;
+	MMCamAttrsInfo info;
+	mm_camcorder_get_attribute_info(handle, MMCAM_FILTER_BRIGHTNESS, &info);
+
 	ret = mm_camcorder_get_attributes(handle, NULL, MMCAM_FILTER_BRIGHTNESS, &value, NULL);
 	if (ret == MM_ERROR_NONE) {
 		unsigned char *b = NULL;
@@ -2041,8 +2044,14 @@ int __mmcamcorder_set_exif_basic_info(MMHandleType handle, int image_width, int 
 
 		b = malloc(sizeof(ExifSRational));
 		if (b) {
-			rsData.numerator = value - 5;
-			rsData.denominator = 10;
+			if( info.int_range.min < info.int_range.max) {
+				rsData.numerator = (value - 4) * 5;
+				rsData.denominator = 10;
+			}
+			else {
+				rsData.numerator = 0;
+				rsData.denominator = 10;
+			}
 			exif_set_srational(b, exif_data_get_byte_order(ed), rsData);
 			ret = mm_exif_set_add_entry(ed, EXIF_IFD_EXIF, EXIF_TAG_EXPOSURE_BIAS_VALUE,
 			                            EXIF_FORMAT_SRATIONAL, 1, b);

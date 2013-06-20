@@ -436,9 +436,9 @@ int _mmcamcorder_video_command(MMHandleType handle, int command)
 		if (_mmcamcorder_get_state((MMHandleType)hcamcorder) != MM_CAMCORDER_STATE_PAUSED) {
 			guint imax_size = 0;
 			guint imax_time = 0;
-
-			/* Play record start sound */
-			_mmcamcorder_sound_solo_play(handle, _MMCAMCORDER_FILEPATH_REC_START_SND, TRUE);
+			int ret_free_space = 0;
+			char *dir_name = NULL;
+			guint64 free_space = 0;
 
 			/* Recording */
 			_mmcam_dbg_log("Record Start");
@@ -481,6 +481,29 @@ int _mmcamcorder_video_command(MMHandleType handle, int command)
 				SAFE_FREE (err_name);
 				goto _ERR_CAMCORDER_VIDEO_COMMAND;
 			}
+
+			dir_name = g_path_get_dirname(temp_filename);
+			if (dir_name) {
+				ret_free_space = _mmcamcorder_get_freespace(dir_name, &free_space);
+
+				_mmcam_dbg_warn("current space for recording - %s : [%" G_GUINT64_FORMAT "]",
+				                dir_name, free_space);
+
+				g_free(dir_name);
+				dir_name = NULL;
+			} else {
+				_mmcam_dbg_err("failed to get directory name");
+				ret_free_space = -1;
+			}
+
+			if ((ret_free_space == -1) || free_space <= (_MMCAMCORDER_MINIMUM_SPACE<<1)) {
+				_mmcam_dbg_err("OUT of STORAGE [ret_free_space:%d or free space [%" G_GUINT64_FORMAT "] is smaller than [%d]",
+				               ret_free_space, free_space, (_MMCAMCORDER_MINIMUM_SPACE<<1));
+				return MM_ERROR_OUT_OF_STORAGE;
+			}
+
+			/* Play record start sound */
+			_mmcamcorder_sound_solo_play(handle, _MMCAMCORDER_FILEPATH_REC_START_SND, TRUE);
 
 			/* set max size */
 			if (imax_size <= 0) {
