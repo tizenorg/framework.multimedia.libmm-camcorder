@@ -3015,6 +3015,12 @@ int _mmcamcorder_create_pipeline(MMHandleType handle, int type)
 	}
 #endif
 	_mmcam_dbg_log("ret[%x]", ret);
+
+	if (ret != MM_ERROR_NONE) {
+		_mmcam_dbg_err("error : destroy pipeline");
+		_mmcamcorder_destroy_pipeline(handle, hcamcorder->type);
+	}
+
 	return ret;
 }
 
