@@ -449,10 +449,17 @@ int _mmcamcorder_video_command(MMHandleType handle, int command)
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst, "flush-cache", TRUE);
 			}
 
+			/* flush queue */
+			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", TRUE);
+			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
+
 			ret = _mmcamcorder_gst_set_state(handle, pipeline, GST_STATE_READY);
 			if (ret != MM_ERROR_NONE) {
 				goto _ERR_CAMCORDER_VIDEO_COMMAND;
 			}
+
+			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", FALSE);
+			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", FALSE);
 
 			_mmcamcorder_conf_get_value_int(hcamcorder->conf_main,
 			                                CONFIGURE_CATEGORY_MAIN_RECORD,
@@ -669,13 +676,18 @@ int _mmcamcorder_video_command(MMHandleType handle, int command)
 			return MM_ERROR_CAMCORDER_CMD_IS_RUNNING;
 		}
 
+		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", TRUE);
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
+
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst, "hold-af-after-capturing", FALSE);
 
 		__ta__("        _MMCamcorder_CMD_CANCEL:GST_STATE_READY",
 		ret =_mmcamcorder_gst_set_state(handle, pipeline, GST_STATE_READY);
 		);
+
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", FALSE);
+		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", FALSE);
+
 		if (ret != MM_ERROR_NONE) {
 			goto _ERR_CAMCORDER_VIDEO_COMMAND;
 		}
@@ -880,6 +892,7 @@ int _mmcamcorder_video_handle_eos(MMHandleType handle)
 
 	/* remove blocking part */
 	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "block", FALSE);
+	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", TRUE);
 	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
 
 	mm_camcorder_get_attributes(handle, NULL,
@@ -895,6 +908,7 @@ int _mmcamcorder_video_handle_eos(MMHandleType handle)
 	}
 
 	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", FALSE);
+	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", FALSE);
 
 	__ta__("        _MMCamcorder_CMD_COMMIT:__mmcamcorder_remove_recorder_pipeline",
 	ret = _mmcamcorder_remove_recorder_pipeline((MMHandleType)hcamcorder);
