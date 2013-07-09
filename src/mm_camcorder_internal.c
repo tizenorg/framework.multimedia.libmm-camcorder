@@ -2712,8 +2712,6 @@ GstBusSyncReply _mmcamcorder_pipeline_bus_sync_callback(GstBus *bus, GstMessage 
 	sc = MMF_CAMCORDER_SUBCONTEXT(hcamcorder);
 	mmf_return_val_if_fail(sc, GST_BUS_PASS);
 
-	sc->error_code = MM_ERROR_NONE;
-
 	if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
 		/* parse error message */
 		gst_message_parse_error(message, &err, &debug_info);
