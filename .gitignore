@@ -19,13 +19,6 @@ Makefile.in
 build-stamp
 config.h
 config.status
-debian/files
-debian/*.substvars
-debian/*.install
-debian/*.debhelper
-debian/libmm-camcorder-dev/
-debian/libmm-camcorder-dbg/
-debian/libmm-camcorder/
 libtool
 mm-camcorder.pc
 src/Makefile
