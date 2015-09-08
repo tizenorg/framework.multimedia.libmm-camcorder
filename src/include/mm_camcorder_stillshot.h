@@ -43,10 +43,12 @@ extern "C" {
 #define _MMCAMCORDER_CAPTURE_STOP_CHECK_INTERVAL	5000
 #define _MMCAMCORDER_CAPTURE_STOP_CHECK_COUNT		600
 #define _MNOTE_VALUE_NONE				0
+#define _SOUND_STATUS_INIT                              -1
 
 /*=======================================================================================
 | ENUM DEFINITIONS									|
 ========================================================================================*/
+
 
 /*=======================================================================================
 | STRUCTURE DEFINITIONS									|
@@ -68,6 +70,8 @@ typedef struct {
 	int interval;					/**< Capture interval */
 	int preview_format;				/**< Preview format */
 	int hdr_capture_mode;				/**< HDR Capture mode */
+	gboolean sound_status;				/**< sound status of system */
+	unsigned int volume_level;			/**< media volume level of system */
 	gboolean played_capture_sound;			/**< whether play capture sound when capture starts */
 } _MMCamcorderImageInfo;
 
@@ -96,7 +100,7 @@ typedef struct {
  * @remarks
  * @see		__mmcamcorder_create_preview_pipeline()
  */
-int _mmcamcorder_add_stillshot_pipeline(MMHandleType handle);
+int _mmcamcorder_create_stillshot_pipeline(MMHandleType handle);
 
 /**
  * This function remove still shot bin from main pipeline.
@@ -109,6 +113,15 @@ int _mmcamcorder_add_stillshot_pipeline(MMHandleType handle);
 int _mmcamcorder_remove_stillshot_pipeline(MMHandleType handle);
 
 /**
+ * This function connects capture signal.
+ *
+ * @param[in]	handle		Handle of camcorder context.
+ * @return	This function returns MM_ERROR_NONE on success, or the other values on error.
+ * @remarks
+ */
+int _mmcamcorder_connect_capture_signal(MMHandleType handle);
+
+/**
  * This function destroy image pipeline.
  *
  * @param[in]	handle		Handle of camcorder context.
@@ -117,12 +130,12 @@ int _mmcamcorder_remove_stillshot_pipeline(MMHandleType handle);
  * @see		_mmcamcorder_destroy_pipeline()
  *
  */
-void _mmcamcorder_destroy_image_pipeline(MMHandleType handle);
-int _mmcamcorder_image_command(MMHandleType handle, int command);
-int _mmcamcorder_set_resize_property(MMHandleType handle, int capture_width, int capture_height);
+void _mmcamcorder_destroy_video_capture_pipeline(MMHandleType handle);
+int _mmcamcorder_video_capture_command(MMHandleType handle, int command);
 
 /* Function for capture */
 int __mmcamcorder_set_exif_basic_info(MMHandleType handle, int image_width, int image_height);
+int __mmcamcorder_update_exif_info(MMHandleType handle,void* imagedata, int imgln);
 void __mmcamcorder_init_stillshot_info(MMHandleType handle);
 void __mmcamcorder_get_capture_data_from_buffer(MMCamcorderCaptureDataType *capture_data, int pixtype, GstBuffer *buffer);
 void __mmcamcorder_release_jpeg_data(MMHandleType handle, MMCamcorderCaptureDataType *dest);

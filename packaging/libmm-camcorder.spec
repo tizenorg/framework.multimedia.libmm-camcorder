@@ -1,29 +1,28 @@
 Name:       libmm-camcorder
 Summary:    Camera and recorder library
-Version:    0.6.13
-Release:    1
-Group:      libs
+Version:    0.9.64
+Release:    0
+Group:      libdevel
 License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
-Source1001: packaging/libmm-camcorder.manifest
 Requires(post): /usr/bin/vconftool
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
+BuildRequires:  pkgconfig(capi-system-info)
 BuildRequires:  pkgconfig(mm-common)
 BuildRequires:  pkgconfig(mm-sound)
 BuildRequires:  pkgconfig(libexif)
 BuildRequires:  pkgconfig(mmutil-imgp)
-BuildRequires:  pkgconfig(mm-log)
 BuildRequires:  pkgconfig(gstreamer-plugins-base-0.10)
-BuildRequires:  pkgconfig(mm-ta)
+BuildRequires:  pkgconfig(gstreamer-app-0.10)
 BuildRequires:  pkgconfig(sndfile)
 BuildRequires:  pkgconfig(mm-session)
 BuildRequires:  pkgconfig(audio-session-mgr)
 BuildRequires:  pkgconfig(camsrcjpegenc)
 BuildRequires:  pkgconfig(libpulse)
 BuildRequires:  pkgconfig(vconf)
-BuildRequires:  pkgconfig(pmapi)
 BuildRequires:  gst-plugins-base-devel
+BuildRequires:  pkgconfig(dbus-1)
 
 %description
 Camera and recorder library.
@@ -44,22 +43,31 @@ Camera and recorder development library.
 
 
 %build
-export CFLAGS+=" -DGST_EXT_TIME_ANALYSIS"
-cp %{SOURCE1001} .
+%if 0%{?sec_build_binary_debug_enable}
+export CFLAGS+=" -DTIZEN_DEBUG_ENABLE"
+%endif
+export CFLAGS+=" -Wall -Wcast-qual -Wextra -Wno-array-bounds -Wno-empty-body -Wno-ignored-qualifiers -Wno-unused-parameter -Wshadow -Wwrite-strings -Wswitch-default -Wno-unused-but-set-parameter -Wno-unused-but-set-variable"
+#export CFLAGS+=" -Werror"
 ./autogen.sh
-%configure --disable-static
+%configure \
+	--disable-static
 make %{?jobs:-j%jobs}
 
 %install
 rm -rf %{buildroot}
+mkdir -p %{buildroot}/usr/share/license
+cp LICENSE.APLv2 %{buildroot}/usr/share/license/%{name}
 %make_install
 
 
 %post
 /sbin/ldconfig
 
-vconftool set -t int memory/camera/state 0 -i -u 5000
-vconftool set -t int file/camera/shutter_sound_policy 0 -u 5000
+vconftool set -t int memory/camera/state 0 -i -u 5000 -s system::vconf_multimedia
+vconftool set -t int memory/recorder/state 0 -i -u 5000 -s system::vconf_multimedia
+vconftool set -t int file/camera/shutter_sound_policy 0 -u 5000 -s system::vconf_inhouse
+chsmack -a "device::camera" /usr/share/sounds/mm-camcorder/camera_resource
+chsmack -a "pulseaudio::record" /usr/share/sounds/mm-camcorder/recorder_resource
 
 %postun -p /sbin/ldconfig
 
@@ -69,9 +77,9 @@ vconftool set -t int file/camera/shutter_sound_policy 0 -u 5000
 %{_bindir}/*
 %{_libdir}/*.so.*
 /usr/share/sounds/mm-camcorder/*
+%{_datadir}/license/%{name}
 
 %files devel
-%manifest libmm-camcorder.manifest
 %defattr(-,root,root,-)
 %{_includedir}/mmf/mm_camcorder.h
 %{_libdir}/pkgconfig/mm-camcorder.pc

@@ -22,7 +22,6 @@
 #ifndef __MM_CAMCORDER_INTERNAL_H__
 #define __MM_CAMCORDER_INTERNAL_H__
 
-
 /*=======================================================================================
 | INCLUDE FILES										|
 ========================================================================================*/
@@ -36,7 +35,6 @@
 #include <mm_attrs.h>
 #include <mm_attrs_private.h>
 #include <mm_message.h>
-#include <mm_ta.h>
 #include <sndfile.h>
 #include <vconf.h>
 
@@ -62,11 +60,11 @@ extern "C" {
 /*=======================================================================================
 | MACRO DEFINITIONS									|
 ========================================================================================*/
-#define _mmcam_dbg_verb(fmt, args...)	mmf_debug(MMF_DEBUG_VERBOSE,"[%05d][%s]: " fmt "\n", __LINE__, __func__, ##args);
-#define _mmcam_dbg_log(fmt, args...)	mmf_debug(MMF_DEBUG_LOG,"[%05d][%s]: " fmt "\n", __LINE__, __func__, ##args);
-#define _mmcam_dbg_warn(fmt, args...)	mmf_debug(MMF_DEBUG_WARNING,"[%05d][%s]: " fmt "\n", __LINE__, __func__, ##args);
-#define _mmcam_dbg_err(fmt, args...)	mmf_debug(MMF_DEBUG_ERROR,"[%05d][%s]: " fmt "\n", __LINE__, __func__, ##args);
-#define _mmcam_dbg_crit(fmt, args...)	mmf_debug(MMF_DEBUG_CRITICAL,"[%05d][%s]: " fmt "\n", __LINE__, __func__, ##args);
+#define _mmcam_dbg_verb(fmt, args...)  debug_verbose (" "fmt"\n", ##args);
+#define _mmcam_dbg_log(fmt, args...)   debug_log (" "fmt"\n", ##args);
+#define _mmcam_dbg_warn(fmt, args...)  debug_warning (" "fmt"\n", ##args);
+#define _mmcam_dbg_err(fmt, args...)   debug_error (" "fmt"\n", ##args);
+#define _mmcam_dbg_crit(fmt, args...)  debug_critical (" "fmt"\n", ##args);
 
 /**
  *	Macro for checking validity and debugging
@@ -98,110 +96,152 @@ extern "C" {
 #endif
 
 /* gstreamer element creation macro */
-#define _MMCAMCORDER_PIPELINE_MAKE(sub_context, eid, name /*char* */, err) \
-	if (sub_context->element[eid].gst != NULL) { \
+#define _MMCAMCORDER_PIPELINE_MAKE(sub_context, element, eid, name /*char* */, err) \
+	if (element[eid].gst != NULL) { \
 		_mmcam_dbg_err("The element(Pipeline) is existed. element_id=[%d], name=[%s]", eid, name); \
-		gst_object_unref(sub_context->element[eid].gst); \
+		gst_object_unref(element[eid].gst); \
 	} \
-	sub_context->element[eid].id = eid; \
-	sub_context->element[eid].gst = gst_pipeline_new(name); \
-	if (sub_context->element[eid].gst == NULL) { \
+	element[eid].id = eid; \
+	element[eid].gst = gst_pipeline_new(name); \
+	if (element[eid].gst == NULL) { \
 		_mmcam_dbg_err("Pipeline creation fail. element_id=[%d], name=[%s]", eid, name); \
 		err = MM_ERROR_CAMCORDER_RESOURCE_CREATION; \
 		goto pipeline_creation_error; \
 	} else { \
-		g_object_weak_ref(G_OBJECT(sub_context->element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
+		g_object_weak_ref(G_OBJECT(element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
 	}
 
-#define _MMCAMCORDER_BIN_MAKE(sub_context, eid, name /*char* */, err) \
-	if (sub_context->element[eid].gst != NULL) { \
+#define _MMCAMCORDER_BIN_MAKE(sub_context, element, eid, name /*char* */, err) \
+	if (element[eid].gst != NULL) { \
 		_mmcam_dbg_err("The element(Bin) is existed. element_id=[%d], name=[%s]", eid, name); \
-		gst_object_unref(sub_context->element[eid].gst); \
+		gst_object_unref(element[eid].gst); \
 	} \
-	sub_context->element[eid].id = eid; \
-	sub_context->element[eid].gst = gst_bin_new(name); \
-	if (sub_context->element[eid].gst == NULL) { \
+	element[eid].id = eid; \
+	element[eid].gst = gst_bin_new(name); \
+	if (element[eid].gst == NULL) { \
 		_mmcam_dbg_err("Bin creation fail. element_id=[%d], name=[%s]\n", eid, name); \
 		err = MM_ERROR_CAMCORDER_RESOURCE_CREATION; \
 		goto pipeline_creation_error; \
 	} else { \
-		g_object_weak_ref(G_OBJECT(sub_context->element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
+		g_object_weak_ref(G_OBJECT(element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
 	}
 
-#define _MMCAMCORDER_ELEMENT_MAKE(sub_context, eid, name /*char* */, nickname /*char* */, elist, err) \
-	if (sub_context->element[eid].gst != NULL) { \
+#define _MMCAMCORDER_ELEMENT_MAKE(sub_context, element, eid, name /*char* */, nickname /*char* */, elist, err) \
+	if (element[eid].gst != NULL) { \
 		_mmcam_dbg_err("The element is existed. element_id=[%d], name=[%s]", eid, name); \
-		gst_object_unref(sub_context->element[eid].gst); \
+		gst_object_unref(element[eid].gst); \
 	} \
-	sub_context->element[eid].gst = gst_element_factory_make(name, nickname); \
-	if (sub_context->element[eid].gst == NULL) { \
+	element[eid].gst = gst_element_factory_make(name, nickname); \
+	if (element[eid].gst == NULL) { \
 		_mmcam_dbg_err("Element creation fail. element_id=[%d], name=[%s]", eid, name); \
 		err = MM_ERROR_CAMCORDER_RESOURCE_CREATION; \
 		goto pipeline_creation_error; \
 	} else { \
 		_mmcam_dbg_log("Element creation done. element_id=[%d], name=[%s]", eid, name); \
-		sub_context->element[eid].id = eid; \
-		g_object_weak_ref(G_OBJECT(sub_context->element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
+		element[eid].id = eid; \
+		g_object_weak_ref(G_OBJECT(element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
 		err = MM_ERROR_NONE; \
 	} \
-	elist = g_list_append(elist, &(sub_context->element[eid]));
+	elist = g_list_append(elist, &(element[eid]));
 
-#define _MMCAMCORDER_ELEMENT_MAKE_IGNORE_ERROR(sub_context, eid, name /*char* */, nickname /*char* */, elist) \
-	if (sub_context->element[eid].gst != NULL) { \
+#define _MMCAMCORDER_ELEMENT_MAKE2(sub_context, element, eid, name /*char* */, nickname /*char* */, err) \
+	if (element[eid].gst != NULL) { \
 		_mmcam_dbg_err("The element is existed. element_id=[%d], name=[%s]", eid, name); \
-		gst_object_unref(sub_context->element[eid].gst); \
+		gst_object_unref(element[eid].gst); \
 	} \
-	sub_context->element[eid].gst = gst_element_factory_make(name, nickname); \
-	if (sub_context->element[eid].gst == NULL) { \
+	element[eid].gst = gst_element_factory_make(name, nickname); \
+	if (element[eid].gst == NULL) { \
 		_mmcam_dbg_err("Element creation fail. element_id=[%d], name=[%s]", eid, name); \
+		err = MM_ERROR_CAMCORDER_RESOURCE_CREATION; \
 	} else { \
 		_mmcam_dbg_log("Element creation done. element_id=[%d], name=[%s]", eid, name); \
-		sub_context->element[eid].id = eid; \
-		g_object_weak_ref(G_OBJECT(sub_context->element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
-		elist = g_list_append(elist, &(sub_context->element[eid])); \
+		element[eid].id = eid; \
+		g_object_weak_ref(G_OBJECT(element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
+		err = MM_ERROR_NONE; \
+	} \
+
+#define _MMCAMCORDER_ELEMENT_MAKE_IGNORE_ERROR(sub_context, element, eid, name /*char* */, nickname /*char* */, elist) \
+	if (element[eid].gst != NULL) { \
+		_mmcam_dbg_err("The element is existed. element_id=[%d], name=[%s]", eid, name); \
+		gst_object_unref(element[eid].gst); \
+	} \
+	element[eid].gst = gst_element_factory_make(name, nickname); \
+	if (element[eid].gst == NULL) { \
+		_mmcam_dbg_err("Element creation fail. element_id=[%d], name=[%s], but keep going...", eid, name); \
+	} else { \
+		_mmcam_dbg_log("Element creation done. element_id=[%d], name=[%s]", eid, name); \
+		element[eid].id = eid; \
+		g_object_weak_ref(G_OBJECT(element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
+		elist = g_list_append(elist, &(element[eid])); \
 	}
 
 #define _MMCAMCORDER_ENCODEBIN_ELMGET(sub_context, eid, name /*char* */, err) \
-	if (sub_context->element[eid].gst != NULL) { \
+	if (sub_context->encode_element[eid].gst != NULL) { \
 		_mmcam_dbg_err("The element is existed. element_id=[%d], name=[%s]", eid, name); \
-		gst_object_unref(sub_context->element[eid].gst); \
+		gst_object_unref(sub_context->encode_element[eid].gst); \
 	} \
-	sub_context->element[eid].id = eid; \
-	g_object_get(G_OBJECT(sc->element[_MMCAMCORDER_ENCSINK_ENCBIN].gst), name, &(sc->element[eid].gst), NULL); \
-	if (sub_context->element[eid].gst == NULL) { \
-		_mmcam_dbg_err("Element get fail. element_id=[%d], name=[%s]", eid, name); \
+	sub_context->encode_element[eid].id = eid; \
+	g_object_get(G_OBJECT(sub_context->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst), name, &(sub_context->encode_element[eid].gst), NULL); \
+	if (sub_context->encode_element[eid].gst == NULL) { \
+		_mmcam_dbg_err("Encode Element get fail. element_id=[%d], name=[%s]", eid, name); \
 		err = MM_ERROR_CAMCORDER_RESOURCE_CREATION; \
 		goto pipeline_creation_error; \
 	} else{ \
-		gst_object_unref(sub_context->element[eid].gst); \
-		g_object_weak_ref(G_OBJECT(sub_context->element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
+		gst_object_unref(sub_context->encode_element[eid].gst); \
+		g_object_weak_ref(G_OBJECT(sub_context->encode_element[eid].gst), (GWeakNotify)_mmcamcorder_element_release_noti, sub_context); \
 	}
 
 /* GStreamer element remove macro */
-#define _MMCAMCORDER_ELEMENT_REMOVE(sub_context, eid) \
-	if (sub_context->element[eid].gst != NULL) { \
-		gst_object_unref(sub_context->element[eid].gst); \
+#define _MMCAMCORDER_ELEMENT_REMOVE(element, eid) \
+	if (element[eid].gst != NULL) { \
+		gst_object_unref(element[eid].gst); \
 	}
 
 #define _MM_GST_ELEMENT_LINK_MANY       gst_element_link_many
 #define _MM_GST_ELEMENT_LINK            gst_element_link
+#define _MM_GST_ELEMENT_UNLINK          gst_element_unlink
 #define _MM_GST_PAD_LINK                gst_pad_link
 
-#define _MM_GST_PAD_LINK_UNREF( srcpad, sinkpad, err, if_fail_goto ) \
-{ \
-	GstPadLinkReturn ret = _MM_GST_PAD_LINK( srcpad, sinkpad ); \
-	gst_object_unref( srcpad ); srcpad = NULL; \
-	gst_object_unref( sinkpad ); sinkpad = NULL; \
-	if (ret != GST_PAD_LINK_OK) { \
-		err = MM_ERROR_CAMCORDER_GST_LINK; \
-		goto if_fail_goto; \
-	} \
+#define _MM_GST_PAD_LINK_UNREF(srcpad, sinkpad, err, if_fail_goto)\
+{\
+	GstPadLinkReturn ret = _MM_GST_PAD_LINK(srcpad, sinkpad);\
+	if (ret != GST_PAD_LINK_OK) {\
+		GstObject *src_parent = gst_pad_get_parent(srcpad);\
+		GstObject *sink_parent = gst_pad_get_parent(sinkpad);\
+		char *src_name = NULL;\
+		char *sink_name = NULL;\
+		g_object_get((GObject *)src_parent, "name", &src_name, NULL);\
+		g_object_get((GObject *)sink_parent, "name", &sink_name, NULL);\
+		_mmcam_dbg_err("src[%s] - sink[%s] link failed", src_name, sink_name);\
+		gst_object_unref(src_parent); src_parent = NULL;\
+		gst_object_unref(sink_parent); sink_parent = NULL;\
+		if (src_name) {\
+			free(src_name); src_name = NULL;\
+		}\
+		if (sink_name) {\
+			free(sink_name); sink_name = NULL;\
+		}\
+		gst_object_unref(srcpad); srcpad = NULL;\
+		gst_object_unref(sinkpad); sinkpad = NULL;\
+		err = MM_ERROR_CAMCORDER_GST_LINK;\
+		goto if_fail_goto;\
+	}\
+	gst_object_unref(srcpad); srcpad = NULL;\
+	gst_object_unref(sinkpad); sinkpad = NULL;\
 }
 
 #define _MM_GST_PAD_UNLINK_UNREF( srcpad, sinkpad) \
-	gst_pad_unlink( srcpad, sinkpad ); \
-	gst_object_unref( srcpad ); srcpad = NULL; \
-	gst_object_unref( sinkpad ); sinkpad = NULL;
+	if (srcpad && sinkpad) { \
+		gst_pad_unlink(srcpad, sinkpad); \
+	} else { \
+		_mmcam_dbg_warn("some pad(srcpad:%p,sinkpad:%p) is NULL", srcpad, sinkpad); \
+	} \
+	if (srcpad) { \
+		gst_object_unref(srcpad); srcpad = NULL; \
+	} \
+	if (sinkpad) { \
+		gst_object_unref(sinkpad); sinkpad = NULL; \
+	}
 
 #define	_MMCAMCORDER_STATE_SET_COUNT		3		/* checking interval */
 #define	_MMCAMCORDER_STATE_CHECK_TOTALTIME	5000000L	/* total wating time for state change */
@@ -274,6 +314,12 @@ extern "C" {
 #define _MMCAMCORDER_TRYLOCK_CMD(handle)					g_mutex_trylock(_MMCAMCORDER_GET_CMD_LOCK(handle))
 #define _MMCAMCORDER_UNLOCK_CMD(handle)						g_mutex_unlock(_MMCAMCORDER_GET_CMD_LOCK(handle))
 
+/* for ASM */
+#define _MMCAMCORDER_GET_ASM_LOCK(handle)					(_MMCAMCORDER_CAST_MTSAFE(handle).asm_lock)
+#define _MMCAMCORDER_LOCK_ASM(handle)						g_mutex_lock(_MMCAMCORDER_GET_ASM_LOCK(handle))
+#define _MMCAMCORDER_TRYLOCK_ASM(handle)					g_mutex_trylock(_MMCAMCORDER_GET_ASM_LOCK(handle))
+#define _MMCAMCORDER_UNLOCK_ASM(handle)						g_mutex_unlock(_MMCAMCORDER_GET_ASM_LOCK(handle))
+
 /* for state change */
 #define _MMCAMCORDER_GET_STATE_LOCK(handle)					(_MMCAMCORDER_CAST_MTSAFE(handle).state_lock)
 #define _MMCAMCORDER_LOCK_STATE(handle)						g_mutex_lock(_MMCAMCORDER_GET_STATE_LOCK(handle))
@@ -282,9 +328,14 @@ extern "C" {
 
 /* for gstreamer state change */
 #define _MMCAMCORDER_GET_GST_STATE_LOCK(handle)					(_MMCAMCORDER_CAST_MTSAFE(handle).gst_state_lock)
-#define _MMCAMCORDER_LOCK_GST_STATE(handle)						g_mutex_lock(_MMCAMCORDER_GET_GST_STATE_LOCK(handle))
+#define _MMCAMCORDER_LOCK_GST_STATE(handle)					g_mutex_lock(_MMCAMCORDER_GET_GST_STATE_LOCK(handle))
 #define _MMCAMCORDER_TRYLOCK_GST_STATE(handle)					g_mutex_trylock(_MMCAMCORDER_GET_GST_STATE_LOCK(handle))
-#define _MMCAMCORDER_UNLOCK_GST_STATE(handle)						g_mutex_unlock(_MMCAMCORDER_GET_GST_STATE_LOCK(handle))
+#define _MMCAMCORDER_UNLOCK_GST_STATE(handle)					g_mutex_unlock(_MMCAMCORDER_GET_GST_STATE_LOCK(handle))
+
+#define _MMCAMCORDER_GET_GST_ENCODE_STATE_LOCK(handle)				(_MMCAMCORDER_CAST_MTSAFE(handle).gst_encode_state_lock)
+#define _MMCAMCORDER_LOCK_GST_ENCODE_STATE(handle)				g_mutex_lock(_MMCAMCORDER_GET_GST_ENCODE_STATE_LOCK(handle))
+#define _MMCAMCORDER_TRYLOCK_GST_ENCODE_STATE(handle)				g_mutex_trylock(_MMCAMCORDER_GET_GST_ENCODE_STATE_LOCK(handle))
+#define _MMCAMCORDER_UNLOCK_GST_ENCODE_STATE(handle)				g_mutex_unlock(_MMCAMCORDER_GET_GST_ENCODE_STATE_LOCK(handle))
 
 /* for setting/calling callback */
 #define _MMCAMCORDER_GET_MESSAGE_CALLBACK_LOCK(handle)      (_MMCAMCORDER_CAST_MTSAFE(handle).message_cb_lock)
@@ -323,18 +374,21 @@ extern "C" {
  * If you increase any enum of attribute values, you also have to increase this.
  */
 #define MM_CAMCORDER_MODE_NUM			3	/**< Number of mode type */
-#define MM_CAMCORDER_COLOR_TONE_NUM		27	/**< Number of color-tone modes */
+#define MM_CAMCORDER_COLOR_TONE_NUM		31	/**< Number of color-tone modes */
 #define MM_CAMCORDER_WHITE_BALANCE_NUM		10	/**< Number of WhiteBalance modes*/
-#define MM_CAMCORDER_SCENE_MODE_NUM		15	/**< Number of program-modes */
+#define MM_CAMCORDER_SCENE_MODE_NUM		16	/**< Number of program-modes */
 #define MM_CAMCORDER_FOCUS_MODE_NUM		6	/**< Number of focus mode*/
 #define MM_CAMCORDER_AUTO_FOCUS_NUM		5	/**< Total count of auto focus type*/
 #define MM_CAMCORDER_FOCUS_STATE_NUM		4	/**< Number of focus state */
 #define MM_CAMCORDER_ISO_NUM			10	/**< Number of ISO */
 #define MM_CAMCORDER_AUTO_EXPOSURE_NUM		9	/**< Number of Auto exposure type */
 #define MM_CAMCORDER_WDR_NUM			3	/**< Number of wide dynamic range */
+#define MM_CAMCORDER_FLIP_NUM			4	/**< Number of Filp mode */
+#define MM_CAMCORDER_ROTATION_NUM		4	/**< Number of Rotation mode */
 #define MM_CAMCORDER_AHS_NUM			4	/**< Number of anti-handshake */
+#define MM_CAMCORDER_VIDEO_STABILIZATION_NUM	2	/**< Number of video stabilization */
 #define MM_CAMCORDER_HDR_CAPTURE_NUM		3	/**< Number of HDR capture mode */
-#define MM_CAMCORDER_GEOMETRY_METHOD_NUM	4	/**< Number of geometry method */
+#define MM_CAMCORDER_GEOMETRY_METHOD_NUM	5	/**< Number of geometry method */
 #define MM_CAMCORDER_TAG_ORT_NUM		8	/**< Number of tag orientation */
 #define MM_CAMCORDER_STROBE_MODE_NUM		8	/**< Number of strobe mode type */
 #define MM_CAMCORDER_STROBE_CONTROL_NUM		3	/**< Number of strobe control type */
@@ -356,7 +410,6 @@ enum {
 
 	/* Command for Image capture */
 	_MMCamcorder_CMD_CAPTURE,
-	_MMCamcorder_CMD_CAPTURE_CANCEL,
 
 	/* Command for Preview(Video/Image only effective) */
 	_MMCamcorder_CMD_PREVIEW_START,
@@ -369,6 +422,15 @@ enum {
 enum {
 	_MMCamcorder_SINGLE_SHOT,
 	_MMCamcorder_MULTI_SHOT,
+};
+
+/**
+ * Audio session registered type
+ */
+enum {
+	_MMCamcorder_ASM_NO_NEED_REGISTER,
+	_MMCamcorder_ASM_SESSION_REGISTERED_INTERNALLY,
+	_MMCamcorder_ASM_SESSION_REGISTERED_BY_OUTSIDE,
 };
 
 /** 
@@ -392,42 +454,50 @@ typedef enum {
 	_MMCAMCORDER_MAIN_PIPE = 0x00,
 
 	/* Pipeline element of Video input */
-	_MMCAMCORDER_VIDEOSRC_BIN,
 	_MMCAMCORDER_VIDEOSRC_SRC,
 	_MMCAMCORDER_VIDEOSRC_FILT,
+	_MMCAMCORDER_VIDEOSRC_CLS_QUE,
 	_MMCAMCORDER_VIDEOSRC_CLS,
-	_MMCAMCORDER_VIDEOSRC_SCALE,
-	_MMCAMCORDER_VIDEOSRC_VSFLT,
-	_MMCAMCORDER_VIDEOSRC_TEE,
+	_MMCAMCORDER_VIDEOSRC_CLS_FILT,
+	_MMCAMCORDER_VIDEOSRC_QUE,
+
+	/* Pipeline element of Video output */
+	_MMCAMCORDER_VIDEOSINK_QUE,
+	_MMCAMCORDER_VIDEOSINK_CLS,
+	_MMCAMCORDER_VIDEOSINK_SINK,
+
+	_MMCAMCORDER_PIPELINE_ELEMENT_NUM,
+} _MMCAMCORDER_PREVIEW_PIPELINE_ELELMENT;
+
+/**
+ * Camcorder Pipeline's Element name.
+ * @note index of element.
+ */
+typedef enum {
+	_MMCAMCORDER_ENCODE_NONE = (-1),
+
+	/* Main Pipeline Element */
+	_MMCAMCORDER_ENCODE_MAIN_PIPE = 0x00,
 
 	/* Pipeline element of Audio input */
 	_MMCAMCORDER_AUDIOSRC_BIN,
 	_MMCAMCORDER_AUDIOSRC_SRC,
 	_MMCAMCORDER_AUDIOSRC_FILT,
-	_MMCAMCORDER_AUDIOSRC_NS,
 	_MMCAMCORDER_AUDIOSRC_QUE,
 	_MMCAMCORDER_AUDIOSRC_CONV,
 	_MMCAMCORDER_AUDIOSRC_VOL,
-	_MMCAMCORDER_AUDIOSRC_ENC,
-
-	/* Pipeline element of Video output */
-	_MMCAMCORDER_VIDEOSINK_BIN,
-	_MMCAMCORDER_VIDEOSINK_QUE,
-	_MMCAMCORDER_VIDEOSINK_SCALE,
-	_MMCAMCORDER_VIDEOSINK_FILT,
-	_MMCAMCORDER_VIDEOSINK_OVERLAY,
-	_MMCAMCORDER_VIDEOSINK_CLS,
-	_MMCAMCORDER_VIDEOSINK_ROTATE,
-	_MMCAMCORDER_VIDEOSINK_SINK,
 
 	/* Pipeline element of Encodebin */
 	_MMCAMCORDER_ENCSINK_BIN,
+	_MMCAMCORDER_ENCSINK_SRC,
+	_MMCAMCORDER_ENCSINK_FILT,
 	_MMCAMCORDER_ENCSINK_ENCBIN,
 	_MMCAMCORDER_ENCSINK_AQUE,
 	_MMCAMCORDER_ENCSINK_CONV,
 	_MMCAMCORDER_ENCSINK_AENC,
 	_MMCAMCORDER_ENCSINK_AENC_QUE,
 	_MMCAMCORDER_ENCSINK_VQUE,
+	_MMCAMCORDER_ENCSINK_VCONV,
 	_MMCAMCORDER_ENCSINK_VENC,
 	_MMCAMCORDER_ENCSINK_VENC_QUE,
 	_MMCAMCORDER_ENCSINK_ITOG,
@@ -439,39 +509,15 @@ typedef enum {
 	_MMCAMCORDER_ENCSINK_MUX,
 	_MMCAMCORDER_ENCSINK_SINK,
 
-	/* Pipeline element of Stillshot output */
-	_MMCAMCORDER_STILLSHOTSINK_BIN,
-	_MMCAMCORDER_STILLSHOTSINK_QUE,
-	_MMCAMCORDER_STILLSHOTSINK_TOGGLE,
-	_MMCAMCORDER_STILLSHOTSINK_CLS,
-	_MMCAMCORDER_STILLSHOTSINK_CROP,
-	_MMCAMCORDER_STILLSHOTSINK_FILT,
-	_MMCAMCORDER_STILLSHOTSINK_SCALE,
-	_MMCAMCORDER_STILLSHOTSINK_FILT2,
-	_MMCAMCORDER_STILLSHOTSINK_ENC,
-	_MMCAMCORDER_STILLSHOTSINK_SINK,
+	_MMCAMCORDER_ENCODE_PIPELINE_ELEMENT_NUM,
+} _MMCAMCORDER_ENCODE_PIPELINE_ELELMENT;
 
-	_MMCamcorder_PIPELINE_ELEMENT_NUM,
-} _MMCAMCORDER_PIPELINE_ELELMENT;
-
-/**
- * Command type for Camcorder.
- */
 typedef enum {
-	_MMCAMCORDER_CMD_CREATE,
-	_MMCAMCORDER_CMD_DESTROY,
-	_MMCAMCORDER_CMD_REALIZE,
-	_MMCAMCORDER_CMD_UNREALIZE,
-	_MMCAMCORDER_CMD_START,
-	_MMCAMCORDER_CMD_STOP,
-	_MMCAMCORDER_CMD_CAPTURESTART,
-	_MMCAMCORDER_CMD_CAPTURESTOP,
-	_MMCAMCORDER_CMD_RECORD,
-	_MMCAMCORDER_CMD_PAUSE,
-	_MMCAMCORDER_CMD_COMMIT,
-	_MMCAMCORDER_CMD_CANCEL,
-	_MMCAMCORDER_CMD_QUIT,
-} _MMCamcorderCommandType;
+	_MMCAMCORDER_TASK_THREAD_STATE_NONE,
+	_MMCAMCORDER_TASK_THREAD_STATE_SOUND_PLAY_START,
+	_MMCAMCORDER_TASK_THREAD_STATE_ENCODE_PIPE_CREATE,
+	_MMCAMCORDER_TASK_THREAD_STATE_EXIT,
+} _MMCamcorderTaskThreadState;
 
 /**
  * System state change cause
@@ -512,30 +558,16 @@ typedef struct {
 	GMutex *lock;			/**< Mutex (for general use) */
 	GCond *cond;			/**< Condition (for general use) */
 	GMutex *cmd_lock;		/**< Mutex (for command) */
+	GMutex *asm_lock;		/**< Mutex (for ASM) */
 	GMutex *state_lock;		/**< Mutex (for state change) */
-	GMutex *gst_state_lock;		/**< Mutex (for state change) */
+	GMutex *gst_state_lock;		/**< Mutex (for gst pipeline state change) */
+	GMutex *gst_encode_state_lock;	/**< Mutex (for gst encode pipeline state change) */
 	GMutex *message_cb_lock;	/**< Mutex (for message callback) */
 	GMutex *vcapture_cb_lock;	/**< Mutex (for video capture callback) */
 	GMutex *vstream_cb_lock;	/**< Mutex (for video stream callback) */
 	GMutex *astream_cb_lock;	/**< Mutex (for audio stream callback) */
 } _MMCamcorderMTSafe;
 
-/**
- * MMCamcorder information for command loop
- */
-typedef struct {
-	pthread_t pCommandThread;											/**< Command loop handle */
-	GQueue *cmd_queue;													/**< Queue for Command loop */
-	sem_t sema;														/**< Semaphore for Command loop */
-} _MMCamcorderCommand;
-
-/**
- * MMCamcorder command information
- */
-typedef struct {
-	MMHandleType handle;												/**< camcorder handle */
-	_MMCamcorderCommandType type;										/**< Type of command */
-} __MMCamcorderCmdInfo;
 
 /**
  * MMCamcorder Sub Context
@@ -544,6 +576,7 @@ typedef struct {
 	bool isMaxsizePausing;                  /**< Because of size limit, pipeline is paused. */
 	bool isMaxtimePausing;                  /**< Because of time limit, pipeline is paused. */
 	int element_num;                        /**< count of element */
+	int encode_element_num;                 /**< count of encode element */
 	int cam_stability_count;                /**< camsensor stability count. the count of frame will drop */
 	GstClockTime pipeline_time;             /**< current time of Gstreamer Pipeline */
 	GstClockTime pause_time;                /**< amount of time while pipeline is in PAUSE state.*/
@@ -558,6 +591,7 @@ typedef struct {
 	gboolean bget_eos;                      /**< Whether getting EOS */
 	gboolean bencbin_capture;               /**< Use Encodebin for capturing */
 	gboolean audio_disable;                 /**< whether audio is disabled or not when record */
+	int videosrc_rotate;                    /**< rotate of videosrc */
 
 	/* For dropping video frame when start recording */
 	int drop_vframe;                        /**< When this value is bigger than zero and pass_first_vframe is zero, MSL will drop video frame though cam_stability count is bigger then zero. */
@@ -565,12 +599,16 @@ typedef struct {
 
 	/* INI information */
 	unsigned int fourcc;                    /**< Get fourcc value of camera INI file */
-	void *info;                             /**< extra information for camcorder */
+	_MMCamcorderImageInfo *info_image;      /**< extra information for image capture */
+	_MMCamcorderVideoInfo *info_video;      /**< extra information for video recording */
+	_MMCamcorderAudioInfo *info_audio;      /**< extra information for audio recording */
 
-	_MMCamcorderGstElement *element;        /**< array of Gstreamer element */
+	_MMCamcorderGstElement *element;        /**< array of preview element */
+	_MMCamcorderGstElement *encode_element; /**< array of encode element */
 	_MMCamcorderKPIMeasure kpi;             /**< information related with performance measurement */
 
 	type_element *VideosinkElement;         /**< configure data of videosink element */
+	type_element *VideoconvertElement;      /**< configure data of videoconvert element */
 	gboolean SensorEncodedCapture;          /**< whether camera sensor support encoded image capture */
 	gboolean internal_encode;               /**< whether use internal encoding function */
 } _MMCamcorderSubContext;
@@ -581,6 +619,7 @@ typedef struct {
 typedef struct mmf_camcorder {
 	/* information */
 	int type;               /**< mmcamcorder_mode_type */
+	int device_type;        /**< device type */
 	int state;              /**< state of camcorder */
 	int target_state;       /**< Target state that want to set. This is a flag that
 	                           * stands for async state changing. If this value differ from state,
@@ -592,13 +631,13 @@ typedef struct mmf_camcorder {
 	mm_exif_info_t *exif_info;             /**< EXIF */
 	GList *buffer_probes;                  /**< a list of buffer probe handle */
 	GList *event_probes;                   /**< a list of event probe handle */
-	GList *data_probes;                    /**< a list of data probe handle */
 	GList *signals;                        /**< a list of signal handle */
 	GList *msg_data;                       /**< a list of msg data */
 	camera_conf *conf_main;                /**< Camera configure Main structure */
 	camera_conf *conf_ctrl;                /**< Camera configure Control structure */
 	int asm_handle;                        /**< Audio session manager handle */
 	guint pipeline_cb_event_id;            /**< Event source ID of pipeline message callback */
+	guint encode_pipeline_cb_event_id;     /**< Event source ID of encode pipeline message callback */
 	guint setting_event_id;                /**< Event source ID of attributes setting to sensor */
 	SOUND_INFO snd_info;                   /**< Sound handle for multishot capture */
 
@@ -612,23 +651,44 @@ typedef struct mmf_camcorder {
 	mm_camcorder_video_capture_callback vcapture_cb;        /**< Video capture callback */
 	void *vcapture_cb_param;                                /**< Video capture callback parameter */
 	int (*command)(MMHandleType, int);                      /**< camcorder's command */
+	mm_camcorder_video_frame_render_error_callback render_error_cb; /* video frame render error callback */
+	void* render_error_cb_user_param;                               /* video frame render error callback user parameter */
 
 	/* etc */
 	_MMCamcorderMTSafe mtsafe;                              /**< Thread safe */
-	_MMCamcorderCommand cmd;                                /**< information for command loop */
-	int sync_state_change;                                  /**< Change framework state synchronously */
-	int quick_device_close;
-	int state_change_by_system;                             /**< MSL changes its state by itself because of system(ASM,MDM..) **/
+	int state_change_by_system;                             /**< MSL changes its state by itself because of system */
 	int asm_event_code;                                     /**< event code of audio session manager */
 	pthread_mutex_t sound_lock;                             /**< Capture sound mutex */
 	pthread_cond_t sound_cond;                              /**< Capture sound cond */
+	pthread_mutex_t restart_preview_lock;                   /**< Capture sound mutex */
 	int use_zero_copy_format;                               /**< Whether use zero copy format for camera input */
+	int support_media_packet_preview_cb;                   /**< Whether support zero copy format for camera input */
 	int shutter_sound_policy;                               /**< shutter sound policy */
+	int brightness_default;                                 /**< default value of brightness */
+	int brightness_step_denominator;                        /**< denominator of brightness bias step */
+	int support_zsl_capture;                                /**< support Zero Shutter Lag capture */
+	char *model_name;                                       /**< model name from system info */
+	char *software_version;                                 /**< software_version from system info */
+	int capture_sound_count;                                /**< count for capture sound */
+	int asm_register;                                       /**< Use ASM internally */
+	int asm_event_type;                                     /**< Event type of ASM */
+	int asm_session_type;                                   /**< Session type of ASM */
+	int asm_session_options;                                /**< Session option of ASM */
 
 	_MMCamcorderInfoConverting caminfo_convert[CAMINFO_CONVERT_NUM];        /**< converting structure of camera info */
 	_MMCamcorderEnumConvert enum_conv[ENUM_CONVERT_NUM];                    /**< enum converting list that is modified by ini info */
 
-	int reserved[4];			/**< reserved */
+	gboolean capture_in_recording;                          /**< Flag for capture while recording */
+
+	guint64 system_memory;                                  /* system memory size, do not use this size for recording*/
+
+	/* task thread */
+	pthread_t task_thread;                                  /**< thread for task */
+	pthread_mutex_t task_thread_lock;                       /**< mutex for task thread */
+	pthread_cond_t task_thread_cond;                        /**< cond for task thread */
+	_MMCamcorderTaskThreadState task_thread_state;          /**< state of task thread */
+
+	int reserved[4];                                        /**< reserved */
 } mmf_camcorder_t;
 
 /*=======================================================================================
@@ -854,6 +914,21 @@ int _mmcamcorder_set_video_stream_callback(MMHandleType hcamcorder,
 					   mm_camcorder_video_stream_callback callback,
 					   void *user_data);
 
+
+/**
+ *	This function is to set callback for video frame render error.
+ *
+ *	@param[in]	hcamcorder	Specifies the camcorder  handle
+ *	@param[in]	callback	Specifies the function pointer of callback function
+ *	@param[in]	user_data	Specifies the user poiner for passing to callback function
+ *
+ *	@return		This function returns zero on success, or negative value with error code.
+ *	@see		mmcamcorder_error_type
+ */
+int _mmcamcorder_set_video_frame_render_error_callback(MMHandleType handle,
+                                                       mm_camcorder_video_frame_render_error_callback callback,
+                                                       void *user_data);
+
 /**
  *	This function is to set callback for audio stream.
  *
@@ -955,40 +1030,6 @@ void _mmcamcorder_set_state(MMHandleType handle, int state);
 int _mmcamcorder_get_async_state(MMHandleType handle);
 
 /**
- * This function sets new target state of camcorder.
- *
- * @param[in]	handle		Handle of camcorder context.
- * @param[in]	target_state	setting target_state value of camcorder.
- * @return	This function returns zero on success, or negative value with error code.
- * @remarks
- * @see		_mmcamcorder_get_async_state(), _mmcamcorder_set_async_cancel()
- *
- */
-int _mmcamcorder_set_async_state(MMHandleType handle, int target_state);
-
-/**
- * This function sets new target state of camcorder.
- *
- * @param[in]	handle		Handle of camcorder context.
- * @return	gboolean
- * @remarks
- * @see		_mmcamcorder_set_async_cancel()
- *
- */
-gboolean _mmcamcorder_set_async_cancel(MMHandleType handle);
-
-/**
- * Check whether camcorder changes its state now.
- *
- * @param[in]	handle		Handle of camcorder context.
- * @return	gboolean
- * @remarks
- * @see		_mmcamcorder_set_async_state(), _mmcamcorder_set_async_cancel()
- *
- */
-gboolean _mmcamcorder_is_state_changing(MMHandleType handle);
-
-/**
  * This function allocates structure of subsidiary attributes.
  *
  * @param[in]	type		Allocation type of camcorder context.
@@ -1055,6 +1096,23 @@ gboolean _mmcamcorder_pipeline_cb_message(GstBus *bus, GstMessage *message, gpoi
 GstBusSyncReply _mmcamcorder_pipeline_bus_sync_callback(GstBus *bus, GstMessage *message, gpointer data);
 
 /**
+ * This function is callback function of main pipeline.
+ * Once this function is registered with certain pipeline using gst_bus_set_sync_handler(),
+ * this callback will be called every time when there is upcomming message from pipeline.
+ * Basically, this function is used as sync error handling function, now.
+ *
+ * @param[in]	bus		pointer of buf that called this function.
+ * @param[in]	message		callback message from pipeline.
+ * @param[in]	data		user data.
+ * @return	This function returns true on success, or false value with error
+ * @remarks
+ * @see		__mmcamcorder_create_audiop_with_encodebin()
+ *
+ */
+GstBusSyncReply _mmcamcorder_audio_pipeline_bus_sync_callback(GstBus *bus, GstMessage *message, gpointer data);
+
+
+/**
  * This function create main pipeline according to type.
  *
  * @param[in]	handle		Handle of camcorder context.
@@ -1115,14 +1173,6 @@ int _mmcamcorder_read_vidsrc_info(int videodevidx, camera_conf **configure_info)
 void _mmcamcorder_video_current_framerate_init(MMHandleType handle);
 int _mmcamcorder_video_current_framerate(MMHandleType handle);
 int _mmcamcorder_video_average_framerate(MMHandleType handle);
-
-/* command */
-void _mmcamcorder_delete_command_info(__MMCamcorderCmdInfo *cmdinfo);
-int _mmcamcorder_create_command_loop(MMHandleType handle);
-int _mmcamcorder_destroy_command_loop(MMHandleType handle);
-int _mmcamcorder_append_command(MMHandleType handle, __MMCamcorderCmdInfo *info);
-int _mmcamcorder_append_simple_command(MMHandleType handle, _MMCamcorderCommandType type);
-void *_mmcamcorder_command_loop_thread(void *arg);
 
 #ifdef __cplusplus
 }

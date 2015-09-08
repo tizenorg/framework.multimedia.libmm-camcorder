@@ -226,8 +226,8 @@
 		<td>Audio device ID for capturing audio stream</td>
 	</tr>
 	<tr>
-		<td>#MMCAM_CAMERA_DEVICE</td>
-		<td>Video device ID for capturing video stream</td>
+		<td>#MMCAM_CAMERA_DEVICE_COUNT</td>
+		<td>Video device count</td>
 	</tr>
 	<tr>
 		<td>#MMCAM_AUDIO_ENCODER</td>
@@ -541,6 +541,10 @@
 		<td>Orientation of captured image</td>
 	</tr>
 	<tr>
+		<td>#MMCAM_TAG_VIDEO_ORIENTATION</td>
+		<td>Orientation of encoded video</td>
+	</tr>
+	<tr>
 		<td>#MMCAM_TAG_SOFTWARE</td>
 		<td>software name and version</td>
 	</tr>
@@ -633,10 +637,15 @@ extern "C" {
 #define MMCAM_AUDIO_DEVICE                      "audio-device"
 
 /**
- * Video device ID for capturing video stream.
- * @see		MMVideoDeviceType (in mm_types.h)
+ * Video device count.
  */
-#define MMCAM_CAMERA_DEVICE                     "camera-device"
+#define MMCAM_CAMERA_DEVICE_COUNT               "camera-device-count"
+
+/**
+ * Facing direction of camera device.
+ * @see		MMCamcorderCameraFacingDirection
+ */
+#define MMCAM_CAMERA_FACING_DIRECTION           "camera-facing-direction"
 
 /**
  * Audio codec for encoding audio stream.
@@ -723,15 +732,24 @@ extern "C" {
 #define MMCAM_CAMERA_FPS                        "camera-fps"
 
 /**
- * Width of input video stream.
+ * Width of preview stream.
  */
 #define MMCAM_CAMERA_WIDTH                      "camera-width"
 
 /**
- * Height of input video stream.
- * @see		
+ * Height of preview stream.
  */
 #define MMCAM_CAMERA_HEIGHT                     "camera-height"
+
+/**
+ * Width of video stream.
+ */
+#define MMCAM_VIDEO_WIDTH                       "video-width"
+
+/**
+ * Height of video stream.
+ */
+#define MMCAM_VIDEO_HEIGHT                      "video-height"
 
 /**
  * Digital zoom level.
@@ -822,6 +840,12 @@ extern "C" {
  * @see		MMCamcorderAHSMode
  */
 #define MMCAM_CAMERA_ANTI_HANDSHAKE             "camera-anti-handshake"
+
+/**
+ * Video Stabilization
+ * @see		MMCamcorderVideoStabilizationMode
+ */
+#define MMCAM_CAMERA_VIDEO_STABILIZATION        "camera-video-stabilization"
 
 /**
  * FPS Auto. When you set true to this attribute, FPS will vary depending on the amount of the light.
@@ -951,6 +975,11 @@ extern "C" {
 #define MMCAM_DISPLAY_HANDLE                    "display-handle"
 
 /**
+ * Pointer of user data for display updated callback.
+ */
+#define MMCAM_DISPLAY_HANDLE_USER_DATA          "display-handle-user-data"
+
+/**
  * Device of display.
  * @see		MMDisplayDeviceType (in mm_types.h)
  */
@@ -1023,6 +1052,12 @@ extern "C" {
 #define MMCAM_DISPLAY_ROTATION                  "display-rotation"
 
 /**
+ * Flip of display.
+ * @see		MMFlipType (in mm_types.h)
+ */
+#define MMCAM_DISPLAY_FLIP                      "display-flip"
+
+/**
  * Visible of display.
  */
 #define MMCAM_DISPLAY_VISIBLE                   "display-visible"
@@ -1056,6 +1091,12 @@ extern "C" {
 #define MMCAM_TARGET_FILENAME                   "target-filename"
 
 /**
+ * Maximum size(Kbyte) of recording file. If the size of file reaches this value,
+ * camcorder will send 'MM_MESSAGE_CAMCORDER_MAX_SIZE' message.
+ */
+#define MMCAM_TARGET_MAX_SIZE                   "target-max-size"
+
+/**
  * Time limit(Second) of recording file. If the elapsed time of recording reaches this value, 
  * camcorder will send 'MM_MESSAGE_CAMCORDER_TIME_LIMIT' message.
  */
@@ -1076,6 +1117,12 @@ extern "C" {
  * @see		MMCamcorderTagOrientation
  */
 #define MMCAM_TAG_ORIENTATION                   "tag-orientation"
+
+/**
+ * Orientation of captured video
+ * @see		MMCamcorderTagVideoOrientation
+ */
+#define MMCAM_TAG_VIDEO_ORIENTATION            "tag-video-orientation"
 
 /**
  * software name and version
@@ -1143,52 +1190,47 @@ extern "C" {
 /**
  * Recommend rotation of display
  */
-#define MMCAM_RECOMMEND_DISPLAY_ROTATION               "recommend-display-rotation"
+#define MMCAM_RECOMMEND_DISPLAY_ROTATION        "recommend-display-rotation"
 
 /**
  * Recommend width of camera preview.
  * This attribute can be used with #mm_camcorder_get_attribute_info and #MMCamcorderPreviewType.
  * @see		mm_camcorder_get_attribute_info, MMCamcorderPreviewType
  */
-#define MMCAM_RECOMMEND_CAMERA_WIDTH                   "recommend-camera-width"
+#define MMCAM_RECOMMEND_CAMERA_WIDTH            "recommend-camera-width"
 
 /**
  * Recommend height of camera preview
  * This attribute can be used with #mm_camcorder_get_attribute_info and #MMCamcorderPreviewType.
  * @see		mm_camcorder_get_attribute_info, MMCamcorderPreviewType
  */
-#define MMCAM_RECOMMEND_CAMERA_HEIGHT                  "recommend-camera-height"
+#define MMCAM_RECOMMEND_CAMERA_HEIGHT           "recommend-camera-height"
 
 /**
- * Horizontal Flip of video input stream.
+ * Flip of video input stream.
+ * @see		MMFlipType (in mm_types.h)
  */
-#define MMCAM_CAMERA_FLIP_HORIZONTAL                   "camera-flip-horizontal"
+#define MMCAM_CAMERA_FLIP                       "camera-flip"
 
 /**
- * Vertical Flip of video input stream.
+ * Support Zero Shutter Lag capture
  */
-#define MMCAM_CAMERA_FLIP_VERTICAL                     "camera-flip-vertical"
+#define MMCAM_SUPPORT_ZSL_CAPTURE               "support-zsl-capture"
 
 /**
- * X coordinate of Face zoom.
- */
-#define MMCAM_CAMERA_FACE_ZOOM_X                      "camera-face-zoom-x"
+* Support zero copy format
+*/
+#define MMCAM_SUPPORT_ZERO_COPY_FORMAT          "support-zero-copy-format"
 
 /**
- * Y coordinate of Face zoom.
- */
-#define MMCAM_CAMERA_FACE_ZOOM_Y                      "camera-face-zoom-y"
+* Support media packet callback
+*/
+#define MMCAM_SUPPORT_MEDIA_PACKET_PREVIEW_CB   "support-media-packet-preview-cb"
 
 /**
- * Zoom level of Face zoom.
+ * Enable to write tags for recorded file
  */
-#define MMCAM_CAMERA_FACE_ZOOM_LEVEL                  "camera-face-zoom-level"
-
-/**
- * Mode of Face zoom.
- * @see		MMCamcorderFaceZoomMode
- */
-#define MMCAM_CAMERA_FACE_ZOOM_MODE                   "camera-face-zoom-mode"
+#define MMCAM_RECORDER_TAG_ENABLE               "recorder-tag-enable"
 
 
 /*=======================================================================================
@@ -1212,10 +1254,17 @@ typedef enum {
  * An enumeration for camcorder mode.
  */
 typedef enum {
-	MM_CAMCORDER_MODE_IMAGE = 0,		/**< Still image capture mode */
-	MM_CAMCORDER_MODE_AUDIO,		/**< Audio recording mode */
-	MM_CAMCORDER_MODE_VIDEO,		/**< Video recording mode */
+	MM_CAMCORDER_MODE_VIDEO_CAPTURE = 0,    /**< Video recording and Image capture mode */
+	MM_CAMCORDER_MODE_AUDIO,                /**< Audio recording mode */
 } MMCamcorderModeType;
+
+/**
+ * An enumeration for facing direction.
+ */
+typedef enum {
+	MM_CAMCORDER_CAMERA_FACING_DIRECTION_REAR = 0, /**< Facing direction of camera is REAR */
+	MM_CAMCORDER_CAMERA_FACING_DIRECTION_FRONT,    /**< Facing direction of camera is FRONT */
+} MMCamcorderCameraFacingDirection;
 
 
 /**
@@ -1233,34 +1282,36 @@ typedef enum
  * seeing through a tinted glass.
  */
 enum MMCamcorderColorToneType {
-	MM_CAMCORDER_COLOR_TONE_NONE = 0,		/**< None */
-	MM_CAMCORDER_COLOR_TONE_MONO,			/**< Mono */
-	MM_CAMCORDER_COLOR_TONE_SEPIA,			/**< Sepia */
-	MM_CAMCORDER_COLOR_TONE_NEGATIVE,		/**< Negative */
-	MM_CAMCORDER_COLOR_TONE_BLUE,			/**< Blue */
-	MM_CAMCORDER_COLOR_TONE_GREEN,			/**< Green */
-	MM_CAMCORDER_COLOR_TONE_AQUA,			/**< Aqua */
-	MM_CAMCORDER_COLOR_TONE_VIOLET,			/**< Violet */
-	MM_CAMCORDER_COLOR_TONE_ORANGE,			/**< Orange */
-	MM_CAMCORDER_COLOR_TONE_GRAY,			/**< Gray */
-	MM_CAMCORDER_COLOR_TONE_RED,			/**< Red */
-	MM_CAMCORDER_COLOR_TONE_ANTIQUE,		/**< Antique */
-	MM_CAMCORDER_COLOR_TONE_WARM,			/**< Warm */
-	MM_CAMCORDER_COLOR_TONE_PINK,		 	/**< Pink */
-	MM_CAMCORDER_COLOR_TONE_YELLOW,			/**< Yellow */
-	MM_CAMCORDER_COLOR_TONE_PURPLE,			/**< Purple */
-	MM_CAMCORDER_COLOR_TONE_EMBOSS,			/**< Emboss */
-	MM_CAMCORDER_COLOR_TONE_OUTLINE,		/**< Outline */
-
-	MM_CAMCORDER_COLOR_TONE_SOLARIZATION_1,		/**< Solarization1 */
-	MM_CAMCORDER_COLOR_TONE_SOLARIZATION_2,		/**< Solarization2 */
-	MM_CAMCORDER_COLOR_TONE_SOLARIZATION_3,		/**< Solarization3 */
-	MM_CAMCORDER_COLOR_TONE_SOLARIZATION_4,		/**< Solarization4 */
-
-	MM_CAMCORDER_COLOR_TONE_SKETCH_1,		/**< Sketch1 */
-	MM_CAMCORDER_COLOR_TONE_SKETCH_2,		/**< Sketch2 */
-	MM_CAMCORDER_COLOR_TONE_SKETCH_3,		/**< Sketch3 */
-	MM_CAMCORDER_COLOR_TONE_SKETCH_4,		/**< Sketch4 */	
+	MM_CAMCORDER_COLOR_TONE_NONE = 0,               /**< None */
+	MM_CAMCORDER_COLOR_TONE_MONO,                   /**< Mono */
+	MM_CAMCORDER_COLOR_TONE_SEPIA,                  /**< Sepia */
+	MM_CAMCORDER_COLOR_TONE_NEGATIVE,               /**< Negative */
+	MM_CAMCORDER_COLOR_TONE_BLUE,                   /**< Blue */
+	MM_CAMCORDER_COLOR_TONE_GREEN,                  /**< Green */
+	MM_CAMCORDER_COLOR_TONE_AQUA,                   /**< Aqua */
+	MM_CAMCORDER_COLOR_TONE_VIOLET,                 /**< Violet */
+	MM_CAMCORDER_COLOR_TONE_ORANGE,                 /**< Orange */
+	MM_CAMCORDER_COLOR_TONE_GRAY,                   /**< Gray */
+	MM_CAMCORDER_COLOR_TONE_RED,                    /**< Red */
+	MM_CAMCORDER_COLOR_TONE_ANTIQUE,                /**< Antique */
+	MM_CAMCORDER_COLOR_TONE_WARM,                   /**< Warm */
+	MM_CAMCORDER_COLOR_TONE_PINK,                   /**< Pink */
+	MM_CAMCORDER_COLOR_TONE_YELLOW,                 /**< Yellow */
+	MM_CAMCORDER_COLOR_TONE_PURPLE,                 /**< Purple */
+	MM_CAMCORDER_COLOR_TONE_EMBOSS,                 /**< Emboss */
+	MM_CAMCORDER_COLOR_TONE_OUTLINE,                /**< Outline */
+	MM_CAMCORDER_COLOR_TONE_SOLARIZATION,           /**< Solarization */
+	MM_CAMCORDER_COLOR_TONE_SKETCH,                 /**< Sketch */
+	MM_CAMCORDER_COLOR_TONE_WASHED,                 /**< Washed */
+	MM_CAMCORDER_COLOR_TONE_VINTAGE_WARM,           /**< Vintage warm */
+	MM_CAMCORDER_COLOR_TONE_VINTAGE_COLD,           /**< Vintage cold */
+	MM_CAMCORDER_COLOR_TONE_POSTERIZATION,          /**< Posterization */
+	MM_CAMCORDER_COLOR_TONE_CARTOON,                /**< Cartoon */
+	MM_CAMCORDER_COLOR_TONE_SELECTIVE_RED,          /**< Selective color - Red */
+	MM_CAMCORDER_COLOR_TONE_SELECTIVE_GREEN,        /**< Selective color - Green */
+	MM_CAMCORDER_COLOR_TONE_SELECTIVE_BLUE,         /**< Selective color - Blue */
+	MM_CAMCORDER_COLOR_TONE_SELECTIVE_YELLOW,       /**< Selective color - Yellow */
+	MM_CAMCORDER_COLOR_TONE_SELECTIVE_RED_YELLOW,   /**< Selective color - Red and Yellow */
 };
 
 
@@ -1307,6 +1358,7 @@ enum MMCamcorderSceneModeType {
 	MM_CAMCORDER_SCENE_MODE_SHOW_WINDOW,    /**< Show window */
 	MM_CAMCORDER_SCENE_MODE_CANDLE_LIGHT,   /**< Candle light */
 	MM_CAMCORDER_SCENE_MODE_BACKLIGHT,      /**< Backlight */
+	MM_CAMCORDER_SCENE_MODE_AQUA,           /**< Aqua */
 };
 
 
@@ -1411,6 +1463,15 @@ enum MMCamcorderAHSMode {
 
 
 /**
+ * An enumeration for Video stabilization mode
+ */
+enum MMCamcorderVideoStabilizationMode {
+	MM_CAMCORDER_VIDEO_STABILIZATION_OFF = 0,	/**< Video Stabilization OFF*/
+	MM_CAMCORDER_VIDEO_STABILIZATION_ON,		/**< Video Stabilization ON*/
+};
+
+
+/**
  * Geometry method for camcorder display.
  */
 enum MMCamcorderGeometryMethod {
@@ -1418,6 +1479,7 @@ enum MMCamcorderGeometryMethod {
 	MM_CAMCORDER_ORIGIN_SIZE,		/**< Origin size*/
 	MM_CAMCORDER_FULL,			/**< full-screen*/
 	MM_CAMCORDER_CROPPED_FULL,		/**< Cropped full-screen*/
+	MM_CAMCORDER_ORIGIN_OR_LETTER,		/**< Origin size or Letter box*/
 	MM_CAMCORDER_CUSTOM_ROI,		/**< Explicitely described destination ROI*/
 };
 
@@ -1436,6 +1498,17 @@ enum MMCamcorderTagOrientation {
 	MM_CAMCORDER_TAG_ORT_0R_VR_0C_VB,	/**< The 0th row is the visual right-hand side of the image, and the 0th column is the visual bottom.*/
 	MM_CAMCORDER_TAG_ORT_0R_VL_0C_VB,	/**< The 0th row is the visual left-hand side of the image, and the 0th column is the visual bottom.*/
 };
+
+/**
+ * An enumeration for captured video orientation values of tag .
+ */
+enum MMCamcorderTagVideoOrientation {
+	MM_CAMCORDER_TAG_VIDEO_ORT_NONE =0,	/**< No Orientation.*/
+	MM_CAMCORDER_TAG_VIDEO_ORT_90,		/**< 90 degree */
+	MM_CAMCORDER_TAG_VIDEO_ORT_180,	/**< 180 degree */
+	MM_CAMCORDER_TAG_VIDEO_ORT_270,	/**< 270 degree */
+};
+
 
 
 /**
@@ -1473,19 +1546,12 @@ enum MMCamcorderDetectMode {
 
 
 /**
- * An enumeration for Face zoom mode.
- */
-enum MMCamcorderFaceZoomMode {
-	MM_CAMCORDER_FACE_ZOOM_MODE_OFF = 0,    /**< turn face zoom off */
-	MM_CAMCORDER_FACE_ZOOM_MODE_ON,         /**< turn face zoom on */
-};
-
-/**
  * An enumeration for recommended preview resolution.
  */
 enum MMCamcorderPreviewType {
 	MM_CAMCORDER_PREVIEW_TYPE_NORMAL = 0,   /**< normal ratio like 4:3 */
 	MM_CAMCORDER_PREVIEW_TYPE_WIDE,         /**< wide ratio like 16:9 */
+	MM_CAMCORDER_PREVIEW_TYPE_SQUARE,       /**< square ratio like 1:1 */
 };
 
 
@@ -1527,6 +1593,21 @@ typedef enum {
 	MM_CAM_ATTRS_FLAG_MODIFIED = 1 << 2,	/**< Modified */
 	MM_CAM_ATTRS_FLAG_RW = MM_CAM_ATTRS_FLAG_READABLE | MM_CAM_ATTRS_FLAG_WRITABLE,	/**< Readable and Writable */
 } MMCamAttrsFlag;
+
+
+/**********************************
+*          Stream data            *
+**********************************/
+/**
+ * An enumeration for stream data type.
+ */
+typedef enum {
+	MM_CAM_STREAM_DATA_YUV420 = 0,          /**< YUV420 Packed type - 1 plane */
+	MM_CAM_STREAM_DATA_YUV422,              /**< YUV422 Packed type - 1 plane */
+	MM_CAM_STREAM_DATA_YUV420SP,            /**< YUV420 SemiPlannar type - 2 planes */
+	MM_CAM_STREAM_DATA_YUV420P,             /**< YUV420 Plannar type - 3 planes */
+	MM_CAM_STREAM_DATA_YUV422P,             /**< YUV422 Plannar type - 3 planes */
+} MMCamStreamData;
 
 
 /*=======================================================================================
@@ -1602,13 +1683,40 @@ typedef struct {
 /**
  * Structure for video stream data.
  */
+#define BUFFER_MAX_PLANE_NUM 4
+
 typedef struct {
-	void *data;			/**< pointer of captured stream */
-	unsigned int length;		/**< length of stream buffer (in byte)*/
-	MMPixelFormatType format;	/**< image format */
-	int width;			/**< width of video buffer */
-	int height;			/**< height of video buffer */
-	unsigned int timestamp;		/**< timestamp of stream buffer (msec)*/
+	union {
+		struct {
+			unsigned char *yuv;
+			unsigned int length_yuv;
+		} yuv420, yuv422;
+		struct {
+			unsigned char *y;
+			unsigned int length_y;
+			unsigned char *uv;
+			unsigned int length_uv;
+		} yuv420sp;
+		struct {
+			unsigned char *y;
+			unsigned int length_y;
+			unsigned char *u;
+			unsigned int length_u;
+			unsigned char *v;
+			unsigned int length_v;
+		} yuv420p, yuv422p;
+	} data;                         /**< pointer of captured stream */
+	MMCamStreamData data_type;      /**< data type */
+	unsigned int length_total;      /**< total length of stream buffer (in byte)*/
+	unsigned int num_planes;        /**< number of planes */
+	MMPixelFormatType format;       /**< image format */
+	int width;                      /**< width of video buffer */
+	int height;                     /**< height of video buffer */
+	unsigned int timestamp;         /**< timestamp of stream buffer (msec)*/
+	void *bo[BUFFER_MAX_PLANE_NUM]; /**< TBM buffer object */
+	void *internal_buffer;          /**< Internal buffer pointer */
+	int stride[BUFFER_MAX_PLANE_NUM];    /**< Stride of each plane */
+	int elevation[BUFFER_MAX_PLANE_NUM]; /**< Elevation of each plane */
 } MMCamcorderVideoStreamDataType;
 
 
@@ -1679,6 +1787,17 @@ typedef struct _MMCamFaceDetectInfo {
  *	@remarks		This function is issued in the context of gstreamer (video sink thread).
  */
 typedef gboolean (*mm_camcorder_video_stream_callback)(MMCamcorderVideoStreamDataType *stream, void *user_param);
+
+
+/**
+ * Video frame render error callback function type.
+ *
+ *	@param[in]	error_id		cause of error
+ *	@param[in]	user_param		User defined parameter which is passed when set video frame render error callback
+ *
+ * @return	This callback function have to return MM_ERROR_NONE.
+ */
+typedef gboolean (*mm_camcorder_video_frame_render_error_callback) (void *error_id, void *user_param);
 
 
 /**
@@ -2655,6 +2774,23 @@ gboolean setting_video_stream_callback()
  *	@endcode
  */
 int mm_camcorder_set_video_stream_callback(MMHandleType camcorder, mm_camcorder_video_stream_callback callback, void *user_data);
+
+
+/**
+ * This function set callback function for rendering error information of video render plug-in.
+ *
+ *	@param[in]	camcorder		Handle of camcorder.
+ *	@param[in]	callback		Frame render error callback function.
+ *	@param[in]	user_data		User data which is passed to callback function.
+ *
+ *	@return	This function returns zero on success, or negative value with error code.
+ *	@see
+ *	@remarks	None
+ *	@par Example
+ *	@code
+ *	@endcode
+ */
+int mm_camcorder_set_video_frame_render_error_callback(MMHandleType camcorder, mm_camcorder_video_frame_render_error_callback callback, void *user_data);
 
 
 /**
