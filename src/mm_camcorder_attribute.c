@@ -26,15 +26,17 @@
 #include "mm_camcorder_internal.h"
 #include "mm_camcorder_gstcommon.h"
 
-#include <gst/interfaces/colorbalance.h>
-#include <gst/interfaces/cameracontrol.h>
-#include <gst/interfaces/xoverlay.h>
+#include <gst/video/colorbalance.h>
+#include <gst/video/cameracontrol.h>
+#include <gst/video/videooverlay.h>
 
 /*-----------------------------------------------------------------------
 |    MACRO DEFINITIONS:							|
 -----------------------------------------------------------------------*/
 #define MMCAMCORDER_DEFAULT_CAMERA_WIDTH        640
 #define MMCAMCORDER_DEFAULT_CAMERA_HEIGHT       480
+#define MMCAMCORDER_DEFAULT_ENCODER_PREVIEW_BITRATE (1024*1024*10)
+#define MMCAMCORDER_DEFAULT_ENCODER_PREVIEW_IFRAME_INTERVAL 1000
 
 /*---------------------------------------------------------------------------------------
 |    GLOBAL VARIABLE DEFINITIONS for internal						|
@@ -81,9 +83,9 @@ mm_cam_attr_construct_info cam_attrs_const_info[] ={
 		MMF_VALUE_TYPE_INT,
 		MM_ATTRS_FLAG_RW,
 		{(void*)MM_AUDIO_DEVICE_MIC},
-		MM_ATTRS_VALID_TYPE_INT_RANGE,
+		MM_ATTRS_VALID_TYPE_INT_ARRAY,
+		(int)NULL,
 		0,
-		MM_AUDIO_DEVICE_NUM-1,
 		NULL,
 	},
 	{
@@ -325,9 +327,9 @@ mm_cam_attr_construct_info cam_attrs_const_info[] ={
 		MMF_VALUE_TYPE_INT,
 		MM_ATTRS_FLAG_RW,
 		{(void*)30},
-		MM_ATTRS_VALID_TYPE_INT_ARRAY,
+		MM_ATTRS_VALID_TYPE_INT_RANGE,
 		0,
-		0,
+		1024,
 		_mmcamcorder_commit_camera_fps,
 	},
 	{
@@ -1285,6 +1287,28 @@ mm_cam_attr_construct_info cam_attrs_const_info[] ={
 	},
 	//110
 	{
+		MM_CAM_CAMERA_PAN,
+		"camera-pan",
+		MMF_VALUE_TYPE_INT,
+		MM_ATTRS_FLAG_RW,
+		{(void*)0},
+		MM_ATTRS_VALID_TYPE_INT_RANGE,
+		-10,
+		10,
+		_mmcamcorder_commit_camera_pan,
+	},
+	{
+		MM_CAM_CAMERA_TILT,
+		"camera-tilt",
+		MMF_VALUE_TYPE_INT,
+		MM_ATTRS_FLAG_RW,
+		{(void*)0},
+		MM_ATTRS_VALID_TYPE_INT_RANGE,
+		-10,
+		10,
+		_mmcamcorder_commit_camera_tilt,
+	},
+	{
 		MM_CAM_VIDEO_WIDTH,
 		"video-width",
 		MMF_VALUE_TYPE_INT,
@@ -1348,6 +1372,51 @@ mm_cam_attr_construct_info cam_attrs_const_info[] ={
 		MM_ATTRS_VALID_TYPE_INT_RANGE,
 		FALSE,
 		TRUE,
+		NULL,
+	},
+	{
+		MM_CAM_DISPLAY_SCALER,
+		"display-scaler",
+		MMF_VALUE_TYPE_INT,
+		MM_ATTRS_FLAG_RW,
+		{(void*)0},
+		MM_ATTRS_VALID_TYPE_INT_RANGE,
+		0,
+		1,
+		_mmcamcorder_commit_display_scaler,
+	},
+	{
+		MM_CAM_ENCODED_PREVIEW_BITRATE,
+		"encoded-preview-bitrate",
+		MMF_VALUE_TYPE_INT,
+		MM_ATTRS_FLAG_RW,
+		{(void*)MMCAMCORDER_DEFAULT_ENCODER_PREVIEW_BITRATE},
+		MM_ATTRS_VALID_TYPE_INT_RANGE,
+		0,
+		_MMCAMCORDER_MAX_INT,
+		_mmcamcorder_commit_encoded_preview_bitrate,
+	},
+	//120
+	{
+		MM_CAM_ENCODED_PREVIEW_IFRAME_INTERVAL,
+		"encoded-preview-iframe-interval",
+		MMF_VALUE_TYPE_INT,
+		MM_ATTRS_FLAG_RW,
+		{(void*)MMCAMCORDER_DEFAULT_ENCODER_PREVIEW_IFRAME_INTERVAL},
+		MM_ATTRS_VALID_TYPE_INT_RANGE,
+		0,
+		_MMCAMCORDER_MAX_INT,
+		_mmcamcorder_commit_encoded_preview_iframe_interval,
+	},
+	{
+		MM_CAM_USB_AUDIO_UDEV_ID,
+		"usb-audio-device-id",
+		MMF_VALUE_TYPE_STRING,
+		MM_ATTRS_FLAG_RW,
+		{(void*)NULL},
+		MM_ATTRS_VALID_TYPE_NONE,
+		0,
+		0,
 		NULL,
 	},
 	{
@@ -1549,6 +1618,7 @@ _mmcamcorder_set_attributes(MMHandleType handle, char **err_attr_name, const cha
 {
 	MMHandleType attrs = 0;
 	int ret = MM_ERROR_NONE;
+	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 
 	mmf_return_val_if_fail( handle, MM_ERROR_CAMCORDER_INVALID_ARGUMENT );
 //	mmf_return_val_if_fail( err_attr_name, MM_ERROR_CAMCORDER_INVALID_ARGUMENT );
@@ -1567,12 +1637,19 @@ _mmcamcorder_set_attributes(MMHandleType handle, char **err_attr_name, const cha
 	}
 
 	if (ret == MM_ERROR_NONE) {
+		hcamcorder->error_code = MM_ERROR_NONE;
 		ret = mm_attrs_set_valist(attrs, err_attr_name, attribute_name, var_args);
 	}
 
 	_MMCAMCORDER_UNLOCK_CMD(handle);
 
 	if (ret != MM_ERROR_NONE) {
+		if (hcamcorder->error_code != MM_ERROR_NONE) {
+			_mmcam_dbg_err("error_code is not NONE. origin 0x%x, modified 0x%x", ret, hcamcorder->error_code);
+			ret = hcamcorder->error_code;
+			hcamcorder->error_code = MM_ERROR_NONE;
+		}
+
 		_mmcam_dbg_err("failed error code 0x%x - handle %p", ret, (mmf_camcorder_t *)handle);
 	}
 
@@ -1822,7 +1899,7 @@ bool _mmcamcorder_commit_capture_break_cont_shot (MMHandleType handle, int attr_
 			return TRUE;
 		}
 
-		control = GST_CAMERA_CONTROL( sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst );
+		control = GST_CAMERA_CONTROL(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst);
 		if (control) {
 			gst_camera_control_set_capture_command(control, GST_CAMERA_CONTROL_CAPTURE_COMMAND_STOP_MULTISHOT);
 			_mmcam_dbg_warn("Commit Break continuous shot : Set command OK. current state[%d]", current_state);
@@ -1922,8 +1999,39 @@ bool _mmcamcorder_commit_audio_volume (MMHandleType handle, int attr_idx, const 
 
 bool _mmcamcorder_commit_camera_fps (MMHandleType handle, int attr_idx, const mmf_value_t *value)
 {
+	MMCamAttrsInfo fps_info;
+	int resolution_width = 0;
+	int resolution_height = 0;
+	int i;
+	int ret;
+
 	_mmcam_dbg_log("FPS(%d)", value->value.i_val);
-	return TRUE;
+
+	ret = mm_camcorder_get_attributes(handle, NULL,
+							MMCAM_CAMERA_WIDTH, &resolution_width,
+							MMCAM_CAMERA_HEIGHT, &resolution_height,
+							NULL);
+
+	if(ret != MM_ERROR_NONE) {
+		_mmcam_dbg_err("FAILED : coult not get resolution values.");
+		return FALSE;
+	}
+
+	ret = mm_camcorder_get_fps_list_by_resolution(handle, resolution_width, resolution_height, &fps_info);
+
+	if(ret != MM_ERROR_NONE) {
+		_mmcam_dbg_err("FAILED : coult not get FPS values by resolution.");
+		return FALSE;
+	}
+
+	for(i=0; i<fps_info.int_array.count; i++) {
+		if(value->value.i_val == fps_info.int_array.array[i]) {
+			return TRUE;
+		}
+	}
+
+	_mmcam_dbg_err("FAILED : %d is not supported FPS", value->value.i_val);
+	return FALSE;
 }
 
 
@@ -1964,7 +2072,7 @@ bool _mmcamcorder_commit_camera_recording_motion_rate(MMHandleType handle, int a
 }
 
 
-bool _mmcamcorder_commit_camera_width (MMHandleType handle, int attr_idx, const mmf_value_t *value)
+bool _mmcamcorder_commit_camera_width(MMHandleType handle, int attr_idx, const mmf_value_t *value)
 {
 	MMHandleType attr = 0;
 	int current_state = MM_CAMCORDER_STATE_NONE;
@@ -2008,6 +2116,13 @@ bool _mmcamcorder_commit_camera_width (MMHandleType handle, int attr_idx, const 
 			                            NULL);
 
 			if (current_state == MM_CAMCORDER_STATE_PREPARE) {
+				if (hcamcorder->resolution_changed == FALSE) {
+					_mmcam_dbg_log("no need to restart preview");
+					return TRUE;
+				}
+
+				hcamcorder->resolution_changed = FALSE;
+
 				if (!pthread_mutex_trylock(&(hcamcorder->restart_preview_lock))) {
 					_mmcam_dbg_log("restart preview");
 
@@ -2015,6 +2130,13 @@ bool _mmcamcorder_commit_camera_width (MMHandleType handle, int attr_idx, const 
 					MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
 
 					_mmcamcorder_gst_set_state(handle, sc->element[_MMCAMCORDER_MAIN_PIPE].gst, GST_STATE_READY);
+
+					if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+						if (!_mmcamcorder_recreate_decoder_for_encoded_preview(handle)) {
+							pthread_mutex_unlock(&(hcamcorder->restart_preview_lock));
+							return FALSE;
+						}
+					}
 
 					/* get preview format */
 					sc->info_image->preview_format = preview_format;
@@ -2047,7 +2169,7 @@ bool _mmcamcorder_commit_camera_width (MMHandleType handle, int attr_idx, const 
 }
 
 
-bool _mmcamcorder_commit_camera_height (MMHandleType handle, int attr_idx, const mmf_value_t *value)
+bool _mmcamcorder_commit_camera_height(MMHandleType handle, int attr_idx, const mmf_value_t *value)
 {
 	int ret = 0;
 	int current_state = MM_CAMCORDER_STATE_NONE;
@@ -2066,7 +2188,7 @@ bool _mmcamcorder_commit_camera_height (MMHandleType handle, int attr_idx, const
 	mmf_return_val_if_fail(attr, FALSE);
 
 	_mmcam_dbg_log("Height(%d)", value->value.i_val);
-	current_state = _mmcamcorder_get_state( handle);
+	current_state = _mmcamcorder_get_state(handle);
 
 	if (current_state > MM_CAMCORDER_STATE_PREPARE) {
 		_mmcam_dbg_log("Resolution can't be changed.(state=%d)", current_state);
@@ -2089,6 +2211,13 @@ bool _mmcamcorder_commit_camera_height (MMHandleType handle, int attr_idx, const
 		sc->info_video->preview_height = height;
 
 		if (current_state == MM_CAMCORDER_STATE_PREPARE) {
+			if (hcamcorder->resolution_changed == FALSE) {
+				_mmcam_dbg_log("no need to restart preview");
+				return TRUE;
+			}
+
+			hcamcorder->resolution_changed = FALSE;
+
 			if (!pthread_mutex_trylock(&(hcamcorder->restart_preview_lock))) {
 				_mmcam_dbg_log("restart preview");
 
@@ -2098,6 +2227,13 @@ bool _mmcamcorder_commit_camera_height (MMHandleType handle, int attr_idx, const
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
 
 				_mmcamcorder_gst_set_state(handle, sc->element[_MMCAMCORDER_MAIN_PIPE].gst, GST_STATE_READY);
+
+				if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+					if (!_mmcamcorder_recreate_decoder_for_encoded_preview(handle)) {
+						pthread_mutex_unlock(&(hcamcorder->restart_preview_lock));
+						return FALSE;
+					}
+				}
 
 				/* get preview format */
 				sc->info_image->preview_format = preview_format;
@@ -2205,6 +2341,103 @@ bool _mmcamcorder_commit_camera_zoom (MMHandleType handle, int attr_idx, const m
 	return FALSE;
 }
 
+bool _mmcamcorder_commit_camera_pan(MMHandleType handle, int attr_idx, const mmf_value_t *value)
+{
+	_MMCamcorderSubContext *sc = NULL;
+	int current_state = MM_CAMCORDER_STATE_NONE;
+
+	GstCameraControl *CameraControl = NULL;
+	GstCameraControlChannel *CameraControlChannel = NULL;
+	const GList *controls = NULL;
+	const GList *item = NULL;
+
+	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
+	mmf_return_val_if_fail(sc, TRUE);
+
+	_mmcam_dbg_log("pan : %d", value->value.i_val);
+
+	current_state = _mmcamcorder_get_state(handle);
+	if (current_state < MM_CAMCORDER_STATE_PREPARE ||
+	    current_state == MM_CAMCORDER_STATE_CAPTURING) {
+		_mmcam_dbg_err("invalid state[%d]", current_state);
+		return FALSE;
+	}
+
+	if (sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst) {
+		CameraControl = GST_CAMERA_CONTROL(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst);
+		controls = gst_camera_control_list_channels(CameraControl);
+		if (controls != NULL) {
+			for (item = controls ; item && item->data ; item = item->next) {
+				CameraControlChannel = item->data;
+				_mmcam_dbg_log("CameraControlChannel->label %s", CameraControlChannel->label);
+				if (!strcmp(CameraControlChannel->label, "pan")) {
+					if (gst_camera_control_set_value(CameraControl, CameraControlChannel, value->value.i_val)) {
+						_mmcam_dbg_warn("set pan %d done", value->value.i_val);
+						return TRUE;
+					} else {
+						_mmcam_dbg_err("failed to set pan %d", value->value.i_val);
+						return FALSE;
+					}
+				}
+			}
+
+			if (item == NULL) {
+				_mmcam_dbg_warn("failed to find pan control channel");
+			}
+		}
+	}
+
+	return FALSE;
+}
+
+bool _mmcamcorder_commit_camera_tilt(MMHandleType handle, int attr_idx, const mmf_value_t *value)
+{
+	_MMCamcorderSubContext *sc = NULL;
+	int current_state = MM_CAMCORDER_STATE_NONE;
+
+	GstCameraControl *CameraControl = NULL;
+	GstCameraControlChannel *CameraControlChannel = NULL;
+	const GList *controls = NULL;
+	const GList *item = NULL;
+
+	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
+	mmf_return_val_if_fail(sc, TRUE);
+
+	_mmcam_dbg_log("tilt : %d", value->value.i_val);
+
+	current_state = _mmcamcorder_get_state(handle);
+	if (current_state < MM_CAMCORDER_STATE_PREPARE ||
+	    current_state == MM_CAMCORDER_STATE_CAPTURING) {
+		_mmcam_dbg_err("invalid state[%d]", current_state);
+		return FALSE;
+	}
+
+	if (sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst) {
+		CameraControl = GST_CAMERA_CONTROL(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst);
+		controls = gst_camera_control_list_channels(CameraControl);
+		if (controls != NULL) {
+			for (item = controls ; item && item->data ; item = item->next) {
+				CameraControlChannel = item->data;
+				_mmcam_dbg_log("CameraControlChannel->label %s", CameraControlChannel->label);
+				if (!strcmp(CameraControlChannel->label, "tilt")) {
+					if (gst_camera_control_set_value(CameraControl, CameraControlChannel, value->value.i_val)) {
+						_mmcam_dbg_warn("set tilt %d done", value->value.i_val);
+						return TRUE;
+					} else {
+						_mmcam_dbg_err("failed to set tilt %d", value->value.i_val);
+						return FALSE;
+					}
+				}
+			}
+
+			if (item == NULL) {
+				_mmcam_dbg_warn("failed to find tilt control channel");
+			}
+		}
+	}
+
+	return FALSE;
+}
 
 bool _mmcamcorder_commit_camera_focus_mode (MMHandleType handle, int attr_idx, const mmf_value_t *value)
 {
@@ -2289,7 +2522,8 @@ bool _mmcamcorder_commit_camera_af_scan_range (MMHandleType handle, int attr_idx
 	_MMCamcorderSubContext *sc = NULL;
 	GstCameraControl *control = NULL;
 	int current_state = MM_CAMCORDER_STATE_NONE;
-	int mslVal, newVal;
+	int mslVal = 0;
+	int newVal = 0;
 	int cur_focus_mode = 0;
 	int cur_focus_range = 0;
 	int msl_mode = MM_CAMCORDER_FOCUS_MODE_NONE;
@@ -2355,164 +2589,205 @@ bool _mmcamcorder_commit_camera_af_scan_range (MMHandleType handle, int attr_idx
 
 bool _mmcamcorder_commit_camera_af_touch_area (MMHandleType handle, int attr_idx, const mmf_value_t *value)
 {
+	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
 	GstCameraControl *control = NULL;
-	GstCameraControlRectType set_area = { 0, 0, 0, 0 }, get_area = { 0, 0, 0, 0 };
+	GstCameraControlRectType set_area = { 0, 0, 0, 0 };
+	GstCameraControlRectType get_area = { 0, 0, 0, 0 };
 
 	int current_state = MM_CAMCORDER_STATE_NONE;
 	int ret = FALSE;
-	int focus_mode = MM_CAMCORDER_FOCUS_MODE_NONE;
+	int i = 0;
+	gboolean is_supported = FALSE;
+	MMCamAttrsInfo focus_mode;
 
 	gboolean do_set = FALSE;
 
-	MMCamAttrsInfo info_y, info_w, info_h;
+	MMCamAttrsInfo info_y;
+	MMCamAttrsInfo info_w;
+	MMCamAttrsInfo info_h;
+
+	if (hcamcorder == NULL) {
+		_mmcam_dbg_log("handle is NULL");
+		return FALSE;
+	}
 
 	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
-	if (!sc)
+	if (!sc) {
 		return TRUE;
+	}
 
 	_mmcam_dbg_log("(%d)", attr_idx);
 
-	current_state = _mmcamcorder_get_state( handle);
+	ret = mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_FOCUS_MODE, &focus_mode);
+	if (ret != MM_ERROR_NONE) {
+		_mmcam_dbg_err("failed to get attribute info for FOCUS_MODE");
+		return FALSE;
+	}
 
-	if( current_state < MM_CAMCORDER_STATE_PREPARE )
-	{
+	for (i = 0 ; i < focus_mode.int_array.count ; i++) {
+		if (focus_mode.int_array.array[i] == MM_CAMCORDER_FOCUS_MODE_TOUCH_AUTO ||
+		    focus_mode.int_array.array[i] == MM_CAMCORDER_FOCUS_MODE_CONTINUOUS) {
+			is_supported = TRUE;
+			break;
+		}
+	}
+
+	if (is_supported == FALSE) {
+		_mmcam_dbg_err("TOUCH_AF/CONTINUOUS not supported");
+		hcamcorder->error_code = MM_ERROR_CAMCORDER_NOT_SUPPORTED;
+		return FALSE;
+	}
+
+	current_state = _mmcamcorder_get_state(handle);
+	if (current_state < MM_CAMCORDER_STATE_PREPARE) {
 		_mmcam_dbg_log("It doesn't need to change dynamically.(state=%d)", current_state);
 		return TRUE;
 	}
 
-	ret = mm_camcorder_get_attributes(handle, NULL,
-				MMCAM_CAMERA_FOCUS_MODE, &focus_mode,
-				NULL);
-	if( ret != MM_ERROR_NONE )
-	{
-		_mmcam_dbg_warn( "Failed to get FOCUS MODE.[%x]", ret );
-		return FALSE;
-	}
-
-	if ((focus_mode != MM_CAMCORDER_FOCUS_MODE_TOUCH_AUTO ) && (focus_mode != MM_CAMCORDER_FOCUS_MODE_CONTINUOUS))
-	{
-		_mmcam_dbg_warn( "Focus mode is NOT TOUCH AUTO or CONTINUOUS(current[%d]). return FALSE", focus_mode );
-		return FALSE;
-	}
-
-	if( sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst )
-	{
-		if (!GST_IS_CAMERA_CONTROL(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst))
-		{
+	if (sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst) {
+		if (!GST_IS_CAMERA_CONTROL(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst)) {
 			_mmcam_dbg_log("Can't cast Video source into camera control.");
 			return TRUE;
 		}
 
-		switch( attr_idx )
-		{
-			case MM_CAM_CAMERA_AF_TOUCH_X:
-				mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_Y, &info_y);
-				mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_WIDTH, &info_w);
-				mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_HEIGHT, &info_h);
-				if( !( (info_y.flag|info_w.flag|info_h.flag) & MM_ATTRS_FLAG_MODIFIED) )
-				{
-					set_area.x = value->value.i_val;
-					mm_camcorder_get_attributes(handle, NULL,
-							MMCAM_CAMERA_AF_TOUCH_Y, &set_area.y,
-							MMCAM_CAMERA_AF_TOUCH_WIDTH, &set_area.width,
-							MMCAM_CAMERA_AF_TOUCH_HEIGHT, &set_area.height,
-							NULL);
-					do_set = TRUE;
-				}
-				else
-				{
-					_mmcam_dbg_log( "Just store AF area[x:%d]", value->value.i_val );
-					return TRUE;
-				}
-				break;
-			case MM_CAM_CAMERA_AF_TOUCH_Y:
-				mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_WIDTH, &info_w);
-				mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_HEIGHT, &info_h);
-				if( !( (info_w.flag|info_h.flag) & MM_ATTRS_FLAG_MODIFIED) )
-				{
-					set_area.y = value->value.i_val;
-					mm_camcorder_get_attributes(handle, NULL,
-							MMCAM_CAMERA_AF_TOUCH_X, &set_area.x,
-							MMCAM_CAMERA_AF_TOUCH_WIDTH, &set_area.width,
-							MMCAM_CAMERA_AF_TOUCH_HEIGHT, &set_area.height,
-							NULL);
-					do_set = TRUE;
-				}
-				else
-				{
-					_mmcam_dbg_log( "Just store AF area[y:%d]", value->value.i_val );
-					return TRUE;
-				}
-				break;
-			case MM_CAM_CAMERA_AF_TOUCH_WIDTH:
-				mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_HEIGHT, &info_h);
-				if( !( info_h.flag & MM_ATTRS_FLAG_MODIFIED) )
-				{
-					set_area.width = value->value.i_val;
-					mm_camcorder_get_attributes(handle, NULL,
-							MMCAM_CAMERA_AF_TOUCH_X, &set_area.x,
-							MMCAM_CAMERA_AF_TOUCH_Y, &set_area.y,
-							MMCAM_CAMERA_AF_TOUCH_HEIGHT, &set_area.height,
-							NULL);
-					do_set = TRUE;
-				}
-				else
-				{
-					_mmcam_dbg_log( "Just store AF area[width:%d]", value->value.i_val );
-					return TRUE;
-				}
-				break;
-			case MM_CAM_CAMERA_AF_TOUCH_HEIGHT:
-				set_area.height = value->value.i_val;
+		memset(&info_y, 0x0, sizeof(MMCamAttrsInfo));
+		memset(&info_w, 0x0, sizeof(MMCamAttrsInfo));
+		memset(&info_h, 0x0, sizeof(MMCamAttrsInfo));
+
+		switch (attr_idx) {
+		case MM_CAM_CAMERA_AF_TOUCH_X:
+			mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_Y, &info_y);
+			mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_WIDTH, &info_w);
+			mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_HEIGHT, &info_h);
+			if (!((info_y.flag|info_w.flag|info_h.flag) & MM_ATTRS_FLAG_MODIFIED)) {
+				set_area.x = value->value.i_val;
 				mm_camcorder_get_attributes(handle, NULL,
-						MMCAM_CAMERA_AF_TOUCH_X, &set_area.x,
-						MMCAM_CAMERA_AF_TOUCH_Y, &set_area.y,
-						MMCAM_CAMERA_AF_TOUCH_WIDTH, &set_area.width,
-						NULL);
+							    MMCAM_CAMERA_AF_TOUCH_Y, &set_area.y,
+							    MMCAM_CAMERA_AF_TOUCH_WIDTH, &set_area.width,
+							    MMCAM_CAMERA_AF_TOUCH_HEIGHT, &set_area.height,
+							    NULL);
 				do_set = TRUE;
-				break;
-			default:
-				break;
+			} else {
+				_mmcam_dbg_log("Just store AF area[x:%d]", value->value.i_val);
+				return TRUE;
+			}
+			break;
+		case MM_CAM_CAMERA_AF_TOUCH_Y:
+			mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_WIDTH, &info_w);
+			mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_HEIGHT, &info_h);
+			if (!((info_w.flag|info_h.flag) & MM_ATTRS_FLAG_MODIFIED)) {
+				set_area.y = value->value.i_val;
+				mm_camcorder_get_attributes(handle, NULL,
+							    MMCAM_CAMERA_AF_TOUCH_X, &set_area.x,
+							    MMCAM_CAMERA_AF_TOUCH_WIDTH, &set_area.width,
+							    MMCAM_CAMERA_AF_TOUCH_HEIGHT, &set_area.height,
+							    NULL);
+				do_set = TRUE;
+			} else {
+				_mmcam_dbg_log( "Just store AF area[y:%d]", value->value.i_val );
+				return TRUE;
+			}
+			break;
+		case MM_CAM_CAMERA_AF_TOUCH_WIDTH:
+			mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_AF_TOUCH_HEIGHT, &info_h);
+			if (!(info_h.flag & MM_ATTRS_FLAG_MODIFIED)) {
+				set_area.width = value->value.i_val;
+				mm_camcorder_get_attributes(handle, NULL,
+							    MMCAM_CAMERA_AF_TOUCH_X, &set_area.x,
+							    MMCAM_CAMERA_AF_TOUCH_Y, &set_area.y,
+							    MMCAM_CAMERA_AF_TOUCH_HEIGHT, &set_area.height,
+							    NULL);
+				do_set = TRUE;
+			} else {
+				_mmcam_dbg_log("Just store AF area[width:%d]", value->value.i_val);
+				return TRUE;
+			}
+			break;
+		case MM_CAM_CAMERA_AF_TOUCH_HEIGHT:
+			set_area.height = value->value.i_val;
+			mm_camcorder_get_attributes(handle, NULL,
+						    MMCAM_CAMERA_AF_TOUCH_X, &set_area.x,
+						    MMCAM_CAMERA_AF_TOUCH_Y, &set_area.y,
+						    MMCAM_CAMERA_AF_TOUCH_WIDTH, &set_area.width,
+						    NULL);
+			do_set = TRUE;
+			break;
+		default:
+			break;
 		}
 
-		if( do_set )
-		{
+		if (do_set) {
+			_MMCamcorderVideoInfo *info = sc->info_video;
+
+			if (info == NULL) {
+				_mmcam_dbg_err("video info is NULL");
+				return FALSE;
+			}
+
 			control = GST_CAMERA_CONTROL (sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst);
 			if (control == NULL) {
 				_mmcam_dbg_err("cast CAMERA_CONTROL failed");
 				return FALSE;
 			}
 
-			ret = gst_camera_control_get_auto_focus_area( control, &get_area );
-			if( !ret )
-			{
+			/* convert area */
+			if (current_state >= MM_CAMCORDER_STATE_RECORDING && info->support_dual_stream == FALSE &&
+			    (info->preview_width != info->video_width || info->preview_height != info->video_height)) {
+				float ratio_width = 0.0;
+				float ratio_height = 0.0;
+
+				if (info->preview_width != 0 && info->preview_height != 0) {
+					ratio_width = (float)info->video_width / (float)info->preview_width;
+					ratio_height = (float)info->video_height / (float)info->preview_height;
+
+					_mmcam_dbg_log("original area %d,%d,%dx%d, resolution ratio : width %f, height %f",
+						       set_area.x, set_area.y, set_area.width, set_area.height, ratio_width, ratio_height);
+
+					set_area.x = (int)((float)set_area.x * ratio_width);
+					set_area.y = (int)((float)set_area.y * ratio_height);
+					set_area.width = (int)((float)set_area.width * ratio_width);
+					set_area.height = (int)((float)set_area.height * ratio_height);
+
+					if (set_area.width <= 0) {
+						set_area.width = 1;
+					}
+					if (set_area.height <= 0) {
+						set_area.height = 1;
+					}
+
+					_mmcam_dbg_log("converted area %d,%d,%dx%d",
+						       set_area.x, set_area.y, set_area.width, set_area.height);
+				} else {
+					_mmcam_dbg_warn("invalid preview size %dx%d, skip AF area converting",
+							info->preview_width, info->preview_height);
+				}
+			}
+
+			ret = gst_camera_control_get_auto_focus_area(control, &get_area);
+			if (!ret) {
 				_mmcam_dbg_warn( "Failed to get AF area" );
 				return FALSE;
 			}
 
-			if( get_area.x == set_area.x && get_area.y == set_area.y )
-			// width and height are not supported now.
-			// get_area.width == set_area.width && get_area.height == set_area.height
-			{
-				_mmcam_dbg_log( "No need to set AF area[x,y:%d,%d]", get_area.x, get_area.y );
+			/* width and height are not supported now */
+			if (get_area.x == set_area.x && get_area.y == set_area.y) {
+				_mmcam_dbg_log("No need to set AF area[x,y:%d,%d]",
+					       get_area.x, get_area.y);
 				return TRUE;
 			}
 
-			ret = gst_camera_control_set_auto_focus_area( control, set_area );
-			if( ret )
-			{
-				_mmcam_dbg_log( "Succeed to set AF area[%d,%d,%dx%d]", set_area.x, set_area.y, set_area.width, set_area.height );
+			ret = gst_camera_control_set_auto_focus_area(control, set_area);
+			if (ret) {
+				_mmcam_dbg_log("Succeed to set AF area[%d,%d,%dx%d]",
+					       set_area.x, set_area.y, set_area.width, set_area.height);
 				return TRUE;
-			}
-			else
-			{
-				_mmcam_dbg_warn( "Failed to set AF area[%d,%d,%dx%d]", set_area.x, set_area.y, set_area.width, set_area.height );
+			} else {
+				_mmcam_dbg_warn("Failed to set AF area[%d,%d,%dx%d]",
+						set_area.x, set_area.y, set_area.width, set_area.height);
 			}
 		}
-	}
-	else
-	{
+	} else {
 		_mmcam_dbg_log("pointer of video src is null");
 	}
 
@@ -2804,7 +3079,7 @@ bool _mmcamcorder_commit_target_filename(MMHandleType handle, int attr_idx, cons
 
 	if (sc->encode_element && sc->encode_element[_MMCAMCORDER_ENCSINK_SINK].gst) {
 		_mmcam_dbg_log("new file location set.[%s] filesink %p", filename, sc->encode_element[_MMCAMCORDER_ENCSINK_SINK].gst);
-		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_SINK].gst, "location", filename);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_SINK].gst, "location", filename);
 		_mmcam_dbg_log("new file location set.(%s)", filename);
 	} else {
 		_mmcam_dbg_log("element is not created yet. [%s] will be set later...", filename);
@@ -3061,7 +3336,7 @@ bool _mmcamcorder_commit_display_handle(MMHandleType handle, int attr_idx, const
 	int current_state = MM_CAMCORDER_STATE_NONE;
 	int display_surface_type = MM_DISPLAY_SURFACE_X;
 	const char *videosink_name = NULL;
-	void *p_data = NULL;
+	void *p_handle = NULL;
 
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
@@ -3089,33 +3364,38 @@ bool _mmcamcorder_commit_display_handle(MMHandleType handle, int attr_idx, const
 
 	/* get videosink name */
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
-
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
 	_mmcam_dbg_log("Commit : videosinkname[%s], surface type[%d]", videosink_name, display_surface_type);
 
-	p_data = value->value.p_val;
+	p_handle = value->value.p_val;
 
 	if (display_surface_type == MM_DISPLAY_SURFACE_X_EXT) {
-		_mmcam_dbg_log("Commit : Set pixmap-id-callback %p", p_data);
-		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst, "pixmap-id-callback", p_data);
+		_mmcam_dbg_log("Commit : Set pixmap-id-callback %p", p_handle);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst, "pixmap-id-callback", p_handle);
 	} else {
-		if (p_data) {
+		if (p_handle) {
 			if (!strcmp(videosink_name, "xvimagesink") ||
 			    !strcmp(videosink_name, "ximagesink")) {
-				_mmcam_dbg_log("Commit : Set XID[%x]", *(int*)(p_data));
-				gst_x_overlay_set_xwindow_id(GST_X_OVERLAY(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst), *(int*)(p_data));
+				_mmcam_dbg_log("Commit : Set XID[%x]", *(int*)(p_handle));
+				gst_video_overlay_set_window_handle(GST_VIDEO_OVERLAY(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst), *(int*)(p_handle));
 			} else if (!strcmp(videosink_name, "evasimagesink") ||
 				   !strcmp(videosink_name, "evaspixmapsink")) {
-				_mmcam_dbg_log("Commit : Set evas object [%p]", p_data);
-				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst, "evas-object", p_data);
+				_mmcam_dbg_log("Commit : Set evas object [%p]", p_handle);
+				MMCAMCORDER_G_OBJECT_SET_POINTER(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst, "evas-object", p_handle);
 			} else {
 				_mmcam_dbg_warn("Commit : Nothing to commit with this element[%s]", videosink_name);
 				return FALSE;
 			}
+
 		} else {
 			_mmcam_dbg_warn("Display handle is NULL");
 			return FALSE;
 		}
 	}
+
 
 	return TRUE;
 }
@@ -3151,11 +3431,15 @@ bool _mmcamcorder_commit_display_handle_user_data(MMHandleType handle, int attr_
 
 	/* get videosink name */
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
 	_mmcam_dbg_log("Commit : videosinkname[%s]", videosink_name);
 
 	if (!strcmp(videosink_name, "xvimagesink")) {
 		_mmcam_dbg_log("Commit : Set pixmap-id-callback-userdata %p", p_userdata);
-		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst, "pixmap-id-callback-userdata", p_userdata);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst, "pixmap-id-callback-userdata", p_userdata);
 	} else {
 		_mmcam_dbg_warn("Commit : Nothing to commit with this element[%s]", videosink_name);
 		return FALSE;
@@ -3191,6 +3475,10 @@ bool _mmcamcorder_commit_display_mode(MMHandleType handle, int attr_idx, const m
 	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
 
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
 	_mmcam_dbg_log("Commit : videosinkname[%s]", videosink_name);
 
 	if (!strcmp(videosink_name, "xvimagesink")) {
@@ -3281,6 +3569,10 @@ bool _mmcamcorder_commit_display_visible(MMHandleType handle, int attr_idx, cons
 
 	/* Get videosink name */
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
 	if (!strcmp(videosink_name, "xvimagesink") || !strcmp(videosink_name, "evasimagesink") ||
 	    !strcmp(videosink_name, "evaspixmapsink")) {
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst, "visible", value->value.i_val);
@@ -3321,6 +3613,10 @@ bool _mmcamcorder_commit_display_geometry_method (MMHandleType handle, int attr_
 
 	/* Get videosink name */
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
 	if (!strcmp(videosink_name, "xvimagesink") || !strcmp(videosink_name, "evasimagesink") ||
 	    !strcmp(videosink_name, "evaspixmapsink")) {
 		method = value->value.i_val;
@@ -3370,6 +3666,10 @@ bool _mmcamcorder_commit_display_rect(MMHandleType handle, int attr_idx, const m
 
 	/* Get videosink name */
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
 	if (!strcmp(videosink_name, "xvimagesink") ||
 	    !strcmp(videosink_name, "evaspixmapsink")) {
 		int rect_x = 0;
@@ -3469,6 +3769,10 @@ bool _mmcamcorder_commit_display_scale(MMHandleType handle, int attr_idx, const 
 
 	/* Get videosink name */
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
 	zoom = value->value.i_val;
 	if (!strcmp(videosink_name, "xvimagesink")) {
 		vs_element = sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst;
@@ -3514,6 +3818,10 @@ bool _mmcamcorder_commit_display_evas_do_scaling(MMHandleType handle, int attr_i
 
 	/* Get videosink name */
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
 	if (!strcmp(videosink_name, "evaspixmapsink")) {
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst, "origin-size", !do_scaling);
 		_mmcam_dbg_log("Set origin-size to %d", !(value->value.i_val));
@@ -3524,13 +3832,66 @@ bool _mmcamcorder_commit_display_evas_do_scaling(MMHandleType handle, int attr_i
 	}
 }
 
+bool _mmcamcorder_commit_display_scaler(MMHandleType handle, int attr_idx, const mmf_value_t *value)
+{
+	int current_state = MM_CAMCORDER_STATE_NONE;
+	GstElement *vs_element = NULL;
+	int vplane = 0;
+	const char *videosink_name = NULL;
+
+	mmf_camcorder_t *hcamcorder= MMF_CAMCORDER( handle);
+	_MMCamcorderSubContext *sc = NULL;
+
+	mmf_return_val_if_fail(handle, FALSE);
+
+	/* check type */
+	if (hcamcorder->type == MM_CAMCORDER_MODE_AUDIO) {
+		_mmcam_dbg_err("invalid mode %d", hcamcorder->type);
+		return FALSE;
+	}
+
+	/* check current state */
+	current_state = _mmcamcorder_get_state(handle);
+	if (current_state < MM_CAMCORDER_STATE_READY) {
+		_mmcam_dbg_log("NOT initialized. this will be applied later");
+		return TRUE;
+	}
+
+	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
+	mmf_return_val_if_fail(sc, TRUE);
+
+	vplane = value->value.i_val;
+
+	/* Get videosink name */
+	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+	if (videosink_name == NULL) {
+		_mmcam_dbg_err("Please check videosink element in configuration file");
+		return FALSE;
+	}
+	if (!strcmp(videosink_name, "xvimagesink")) {
+		vs_element = sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst;
+		MMCAMCORDER_G_OBJECT_SET(vs_element, "device-scaler", vplane);
+		_mmcam_dbg_log("Set device-scaler %d",vplane );
+		return TRUE;
+	} else {
+		_mmcam_dbg_warn("videosink[%s] does not support video plane selection", videosink_name);
+		return FALSE;
+	}
+}
 
 bool _mmcamcorder_commit_strobe (MMHandleType handle, int attr_idx, const mmf_value_t *value)
 {
 	bool bret = FALSE;
 	_MMCamcorderSubContext *sc = NULL;
+	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	int strobe_type, mslVal, newVal, cur_value;
 	int current_state = MM_CAMCORDER_STATE_NONE;
+	int set_flash_state = -1;
+
+	if (hcamcorder == NULL) {
+		_mmcam_dbg_err("NULL handle");
+		return FALSE;
+	}
 
 	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
 	if (!sc)
@@ -3538,18 +3899,56 @@ bool _mmcamcorder_commit_strobe (MMHandleType handle, int attr_idx, const mmf_va
 
 	/*_mmcam_dbg_log( "Commit : strobe attribute(%d)", attr_idx );*/
 
-	//status check
-	current_state = _mmcamcorder_get_state( handle);
+	mslVal = value->value.i_val;
 
+	/* check flash state */
+	if (attr_idx == MM_CAM_STROBE_MODE) {
+		int flash_brightness = 0;
+
+		/* get current flash brightness */
+		if (_mmcamcorder_get_device_flash_brightness(&flash_brightness) != MM_ERROR_NONE) {
+			_mmcam_dbg_err("_mmcamcorder_get_device_flash_brightness failed");
+			hcamcorder->error_code = MM_ERROR_COMMON_INVALID_PERMISSION;
+			return FALSE;
+		}
+
+		_mmcam_dbg_log("flash brightness %d", flash_brightness);
+
+		if (flash_brightness > 0 &&
+		    mslVal != MM_CAMCORDER_STROBE_MODE_OFF) {
+			/* other module already turned on flash */
+			hcamcorder->error_code = MM_ERROR_CAMCORDER_DEVICE_BUSY;
+			_mmcam_dbg_err("other module already turned on flash. avoid to set flash mode here.");
+			return FALSE;
+		} else {
+			/* flash is OFF state, this case will set flash state key */
+			if (mslVal == MM_CAMCORDER_STROBE_MODE_OFF) {
+				set_flash_state = VCONFKEY_CAMERA_FLASH_STATE_OFF;
+			} else {
+				set_flash_state = VCONFKEY_CAMERA_FLASH_STATE_ON;
+			}
+
+			_mmcam_dbg_log("keep going, and will set flash state key %d", set_flash_state);
+		}
+	}
+
+	/* check state */
+	current_state = _mmcamcorder_get_state(handle);
 	if (current_state < MM_CAMCORDER_STATE_READY) {
 		_mmcam_dbg_log("It doesn't need to change dynamically.(state=%d)", current_state);
+
+		if (set_flash_state != -1) {
+			_mmcam_dbg_log("set VCONFKEY_CAMERA_FLASH_STATE : %d", set_flash_state);
+			vconf_set_int(VCONFKEY_CAMERA_FLASH_STATE, set_flash_state);
+			vconf_set_int(VCONFKEY_CAMERA_PID, (int)getpid());
+		}
+
 		return TRUE;
 	} else if (current_state == MM_CAMCORDER_STATE_CAPTURING) {
 		_mmcam_dbg_warn("invalid state[capturing]");
+		hcamcorder->error_code = MM_ERROR_CAMCORDER_INVALID_STATE;
 		return FALSE;
 	}
-
-	mslVal = value->value.i_val;
 
 	switch (attr_idx) {
 	case MM_CAM_STROBE_CONTROL:
@@ -3603,6 +4002,12 @@ bool _mmcamcorder_commit_strobe (MMHandleType handle, int attr_idx, const mmf_va
 			_mmcam_dbg_warn("Failed to get strobe. Type[%d]", strobe_type);
 			bret = FALSE;
 		}
+	}
+
+	if (bret == TRUE && set_flash_state != -1) {
+		_mmcam_dbg_log("set VCONFKEY_CAMERA_FLASH_STATE : %d", set_flash_state);
+		vconf_set_int(VCONFKEY_CAMERA_FLASH_STATE, set_flash_state);
+		vconf_set_int(VCONFKEY_CAMERA_PID, (int)getpid());
 	}
 
 	return bret;
@@ -3685,6 +4090,11 @@ bool _mmcamcorder_commit_camera_hdr_capture(MMHandleType handle, int attr_idx, c
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
 
 				_mmcamcorder_gst_set_state(handle, sc->element[_MMCAMCORDER_MAIN_PIPE].gst, GST_STATE_READY);
+				if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+					if (!_mmcamcorder_recreate_decoder_for_encoded_preview(handle)) {
+						return FALSE;
+					}
+				}
 
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", FALSE);
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", FALSE);
@@ -3800,6 +4210,64 @@ bool _mmcamcorder_commit_detect(MMHandleType handle, int attr_idx, const mmf_val
 	return bret;
 }
 
+bool _mmcamcorder_commit_encoded_preview_bitrate(MMHandleType handle, int attr_idx, const mmf_value_t *value)
+{
+	int current_state = MM_CAMCORDER_STATE_NONE;
+	int preview_format = MM_PIXEL_FORMAT_NV12;
+
+	if ((void *)handle == NULL) {
+		_mmcam_dbg_warn("handle is NULL");
+		return FALSE;
+	}
+
+	_mmcam_dbg_log("Commit : encoded preview bitrate - %d", value->value.i_val);
+
+	/* check preview format */
+	mm_camcorder_get_attributes(handle, NULL, MMCAM_CAMERA_FORMAT, &preview_format, NULL);
+	if (preview_format != MM_PIXEL_FORMAT_ENCODED_H264) {
+		_mmcam_dbg_err("current preview format[%d] is not encoded format", preview_format);
+		return FALSE;
+	}
+
+	/* check state */
+	current_state = _mmcamcorder_get_state(handle);
+	if (current_state < MM_CAMCORDER_STATE_READY) {
+		_mmcam_dbg_log("will be applied when preview starts");
+		return TRUE;
+	}
+
+	return _mmcamcorder_set_encoded_preview_bitrate(handle, value->value.i_val);
+}
+
+
+bool _mmcamcorder_commit_encoded_preview_iframe_interval(MMHandleType handle, int attr_idx, const mmf_value_t *value)
+{
+	int current_state = MM_CAMCORDER_STATE_NONE;
+	int preview_format = MM_PIXEL_FORMAT_NV12;
+
+	if ((void *)handle == NULL) {
+		_mmcam_dbg_warn("handle is NULL");
+		return FALSE;
+	}
+
+	_mmcam_dbg_log("Commit : encoded preview I-frame interval - %d", value->value.i_val);
+
+	/* check preview format */
+	mm_camcorder_get_attributes(handle, NULL, MMCAM_CAMERA_FORMAT, &preview_format, NULL);
+	if (preview_format != MM_PIXEL_FORMAT_ENCODED_H264) {
+		_mmcam_dbg_err("current preview format[%d] is not encoded format", preview_format);
+		return FALSE;
+	}
+
+	/* check state */
+	current_state = _mmcamcorder_get_state(handle);
+	if (current_state < MM_CAMCORDER_STATE_READY) {
+		_mmcam_dbg_log("will be applied when preview starts");
+		return TRUE;
+	}
+
+	return _mmcamcorder_set_encoded_preview_iframe_interval(handle, value->value.i_val);
+}
 
 static bool
 __mmcamcorder_attrs_is_supported(MMHandleType handle, int idx)
@@ -4014,17 +4482,17 @@ static bool __mmcamcorder_set_capture_resolution(MMHandleType handle, int width,
 }
 
 
-static int
-__mmcamcorder_check_valid_pair( MMHandleType handle, char **err_attr_name, const char *attribute_name, va_list var_args )
+static int __mmcamcorder_check_valid_pair(MMHandleType handle, char **err_attr_name, const char *attribute_name, va_list var_args)
 {
 	#define INIT_VALUE            -1
 	#define CHECK_COUNT           3
 
-	mmf_camcorder_t *hcamcorder= MMF_CAMCORDER(handle);
+	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	MMHandleType attrs = 0;
 
 	int ret = MM_ERROR_NONE;
-	int  i = 0, j = 0;
+	int i = 0;
+	int j = 0;
 	const char *name = NULL;
 	const char *check_pair_name[CHECK_COUNT][3] = {
 		{MMCAM_CAMERA_WIDTH,  MMCAM_CAMERA_HEIGHT,  "MMCAM_CAMERA_WIDTH and HEIGHT"},
@@ -4172,6 +4640,25 @@ __mmcamcorder_check_valid_pair( MMHandleType handle, char **err_attr_name, const
 				}
 
 				return MM_ERROR_CAMCORDER_INVALID_ARGUMENT;
+			}
+
+			if (!strcmp(check_pair_name[i][0], MMCAM_CAMERA_WIDTH)) {
+				int current_width = 0;
+				int current_height = 0;
+
+				mm_camcorder_get_attributes(handle, NULL,
+				                            MMCAM_CAMERA_WIDTH, &current_width,
+				                            MMCAM_CAMERA_HEIGHT, &current_height,
+				                            NULL);
+
+				if (current_width != check_pair_value[i][0] ||
+				    current_height != check_pair_value[i][1]) {
+					hcamcorder->resolution_changed = TRUE;
+				} else {
+					hcamcorder->resolution_changed = FALSE;
+				}
+
+				_mmcam_dbg_log("resolution changed : %d", hcamcorder->resolution_changed);
 			}
 
 			if (err_name) {

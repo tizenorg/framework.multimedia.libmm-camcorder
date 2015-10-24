@@ -13,8 +13,8 @@ mm_camcorder_testsuite_CFLAGS = -I$(srcdir)/../src/include \
 #mm_camcorder_testsuite_CFLAGS += -DAPPSRC_TEST
 ############################################
 
-mm_camcorder_testsuite_DEPENDENCIES = $(top_builddir)/src/libmmfcamcorder.la 
-						
+mm_camcorder_testsuite_DEPENDENCIES = $(top_builddir)/src/libmmfcamcorder.la
+
 mm_camcorder_testsuite_LDADD = $(top_builddir)/src/libmmfcamcorder.la \
 			     $(GLIB_LIBS)\
 			     $(GST_LIBS)\

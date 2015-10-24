@@ -165,7 +165,7 @@ static type_element _videoscale_element_default = {
  */
 static type_element _videoconvert_element_default = {
 	"VideoconvertElement",
-	"ffmpegcolorspace",
+	"videoconvert",
 	NULL,
 	0,
 	NULL,
@@ -674,6 +674,18 @@ static type_element _matroska_element_default = {
 };
 
 /*
+ *  M2TS element default value
+ */
+static type_element _m2ts_element_default = {
+	"M2TS",
+	"mpegtsmux",
+	NULL,
+	0,
+	NULL,
+	0,
+};
+
+/*
  * [General] matching table
  */
 static conf_info_table conf_main_general_table[] = {
@@ -702,6 +714,7 @@ static conf_info_table conf_main_video_input_table[] = {
  * [AudioInput] matching table
  */
 static conf_info_table conf_main_audio_input_table[] = {
+	{ "AudioDevice",          CONFIGURE_VALUE_INT_ARRAY, {(int)NULL} },
 	{ "AudiosrcElement",      CONFIGURE_VALUE_ELEMENT, {(int)&_audiosrc_element_default} },
 	{ "AudiomodemsrcElement", CONFIGURE_VALUE_ELEMENT, {(int)&_audiomodemsrc_element_default} },
 };
@@ -820,6 +833,7 @@ static conf_info_table conf_main_mux_table[] = {
 	{ "MID",      CONFIGURE_VALUE_ELEMENT, {(int)&_mid_element_default} },
 	{ "MMF",      CONFIGURE_VALUE_ELEMENT, {(int)&_mmfmux_element_default} },
 	{ "MATROSKA", CONFIGURE_VALUE_ELEMENT, {(int)&_matroska_element_default} },
+	{ "M2TS",     CONFIGURE_VALUE_ELEMENT, {(int)&_m2ts_element_default} },
 };
 
 
@@ -836,7 +850,16 @@ static conf_info_table conf_ctrl_camera_table[] = {
 	{ "PreviewResolution", CONFIGURE_VALUE_INT_PAIR_ARRAY, {(int)NULL} },
 	{ "CaptureResolution", CONFIGURE_VALUE_INT_PAIR_ARRAY, {(int)NULL} },
 	{ "VideoResolution",   CONFIGURE_VALUE_INT_PAIR_ARRAY, {(int)NULL} },
-	{ "FPS",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS0",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS1",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS2",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS3",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS4",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS5",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS6",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS7",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS8",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
+	{ "FPS9",               CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
 	{ "PictureFormat",     CONFIGURE_VALUE_INT_ARRAY,      {(int)NULL} },
 	{ "Overlay",           CONFIGURE_VALUE_INT_RANGE,      {(int)NULL} },
 	{ "RecommendDisplayRotation", CONFIGURE_VALUE_INT,     {3}    },
@@ -1072,12 +1095,13 @@ _mmcamcorder_conf_parse_info( int type, FILE* fd, camera_conf** configure_info )
 	camera_conf* new_conf = (camera_conf *)g_malloc0(sizeof(camera_conf));
 	if (new_conf == NULL) {
 		_mmcam_dbg_err("new_conf alloc failed : %d", sizeof(camera_conf));
+		*configure_info = NULL;
 		return MM_ERROR_CAMCORDER_LOW_MEMORY;
 	}
 
-	buffer_string = (char *)g_malloc0(sizeof(char) * BUFFER_LENGTH_STRING);
+	buffer_string = (char*)g_malloc0(sizeof(char) * BUFFER_LENGTH_STRING);
 	if (buffer_string == NULL) {
-		_mmcam_dbg_err("buffer_string alloc failed : %d", sizeof(char)*BUFFER_LENGTH_STRING);
+		_mmcam_dbg_err("buffer_string alloc failed : %d", sizeof(char) * BUFFER_LENGTH_STRING);
 		*configure_info = NULL;
 		g_free(new_conf);
 		return MM_ERROR_CAMCORDER_LOW_MEMORY;
@@ -1095,7 +1119,7 @@ _mmcamcorder_conf_parse_info( int type, FILE* fd, camera_conf** configure_info )
 		g_free(new_conf);
 		return MM_ERROR_CAMCORDER_INVALID_ARGUMENT;
 	}
-	
+
 	read_main = 0;
 	count_main_category = 0;
 
@@ -1138,12 +1162,12 @@ _mmcamcorder_conf_parse_info( int type, FILE* fd, camera_conf** configure_info )
 		}
 		/* Main Category */
 		else if( *buffer_token[0] == '[' )
-		{	
+		{
 			category_name = get_new_string( buffer_token[0] );
 
 			count_main_category++;
 			count_details = 0;
-			
+
 			while( !feof( fd ) )
 			{
 				length_read = getline( &buffer_string, &BUFFER_LENGTH_STRING, fd );
@@ -1185,7 +1209,7 @@ _mmcamcorder_conf_parse_info( int type, FILE* fd, camera_conf** configure_info )
 
 			/* Details */
 			if( type == CONFIGURE_TYPE_MAIN )
-			{	
+			{
 				if( !strcmp( "[General]", category_name ) )
 				{
 					category = CONFIGURE_CATEGORY_MAIN_GENERAL;
@@ -1257,7 +1281,7 @@ _mmcamcorder_conf_parse_info( int type, FILE* fd, camera_conf** configure_info )
 
 			if( category != -1 )
 			{
-				_mmcamcorder_conf_add_info( type, &(new_conf->info[category]), 
+				_mmcamcorder_conf_add_info( type, &(new_conf->info[category]),
 						buffer_details, category, count_details );
 			}
 			else
@@ -1289,8 +1313,7 @@ _mmcamcorder_conf_parse_info( int type, FILE* fd, camera_conf** configure_info )
 }
 
 
-void
-_mmcamcorder_conf_release_info( camera_conf** configure_info )
+void _mmcamcorder_conf_release_info(camera_conf **configure_info)
 {
 	int i = 0;
 	int j = 0;
@@ -1412,6 +1435,7 @@ _mmcamcorder_conf_release_info( camera_conf** configure_info )
 	_mmcam_dbg_log("Done.");
 }
 
+
 int
 _mmcamcorder_conf_get_value_type( int type, int category, const char* name, int* value_type )
 {
@@ -1425,7 +1449,7 @@ _mmcamcorder_conf_get_value_type( int type, int category, const char* name, int*
 	if( !_mmcamcorder_conf_get_category_size( type, category, &count_value ) )
 	{
 		_mmcam_dbg_warn( "No matched category... check it... categoty[%d]", category );
-		return FALSE;		
+		return FALSE;
 	}
 
 	/*_mmcam_dbg_log( "Number of value : [%d]", count_value );*/
@@ -1463,7 +1487,7 @@ int
 _mmcamcorder_conf_add_info( int type, conf_detail** info, char** buffer_details, int category, int count_details )
 {
 	const int BUFFER_NUM_TOKEN = 256;
-	
+
 	int i = 0;
 	int j = 0;
 	int count_token;
@@ -1582,8 +1606,8 @@ _mmcamcorder_conf_add_info( int type, conf_detail** info, char** buffer_details,
 				(*info)->detail_info[i]      = (void*)new_int_range;
 				/*
 				_mmcam_dbg_log("INT RANGE - name[%s],min[%d],max[%d],default[%d]",
-						new_int_range->name, 
-						new_int_range->min, 
+						new_int_range->name,
+						new_int_range->min,
 						new_int_range->max,
 						new_int_range->default_value);
 				*/
@@ -1621,7 +1645,7 @@ _mmcamcorder_conf_add_info( int type, conf_detail** info, char** buffer_details,
 
 				new_int_array->default_value = atoi( buffer_token[count_token-1] );
 				/*_mmcam_dbg_log("   default value[%d]", new_int_array->default_value);*/
-				
+
 				(*info)->detail_info[i] = (void*)new_int_array;
 				break;
 			}
@@ -1686,7 +1710,7 @@ _mmcamcorder_conf_add_info( int type, conf_detail** info, char** buffer_details,
 			case CONFIGURE_VALUE_STRING:
 			{
 				type_string2* new_string;
-				
+
 				new_string = (type_string2*)g_malloc0( sizeof(type_string2) );
 				if (new_string == NULL) {
 					_mmcam_dbg_err("allocation failed");
@@ -1695,7 +1719,7 @@ _mmcamcorder_conf_add_info( int type, conf_detail** info, char** buffer_details,
 				new_string->name  = get_new_string( buffer_token[0] );
 				new_string->value = get_new_string( buffer_token[1] );
 				(*info)->detail_info[i]	= (void*)new_string;
-				
+
 				/*_mmcam_dbg_log("STRING - name[%s],value[%s]", new_string->name, new_string->value);*/
 				break;
 			}
@@ -1703,7 +1727,7 @@ _mmcamcorder_conf_add_info( int type, conf_detail** info, char** buffer_details,
 			{
 				int count_value = count_token - 2;
 				type_string_array* new_string_array;
-				
+
 				new_string_array = (type_string_array*)g_malloc0( sizeof(type_string_array) );
 				if ( new_string_array == NULL ) {
 					break;
@@ -1735,7 +1759,7 @@ _mmcamcorder_conf_add_info( int type, conf_detail** info, char** buffer_details,
 			case CONFIGURE_VALUE_ELEMENT:
 			{
 				type_element2* new_element;
-				
+
 				new_element = (type_element2*)g_malloc0( sizeof(type_element2) );
 				if ( new_element == NULL ) {
 					_mmcam_dbg_err("allocation failed");
@@ -1827,16 +1851,16 @@ _mmcamcorder_conf_get_value_int( camera_conf* configure_info, int category, cons
 
 	if( configure_info->info[category] )
 	{
-		count	= configure_info->info[category]->count;
-		info	= configure_info->info[category];
-		
+		count = configure_info->info[category]->count;
+		info = configure_info->info[category];
+
 		for( i = 0 ; i < count ; i++ )
 		{
 			if( info->detail_info[i] == NULL )
 			{
 				continue;
 			}
-			
+
 			if( !strcmp( ((type_int*)(info->detail_info[i]))->name , name ) )
 			{
 				*value = ((type_int*)(info->detail_info[i]))->value;
@@ -1870,21 +1894,21 @@ _mmcamcorder_conf_get_value_int_range( camera_conf* configure_info, int category
 
 	if( configure_info->info[category] )
 	{
-		count	= configure_info->info[category]->count;
-		info	= configure_info->info[category];
-		
+		count = configure_info->info[category]->count;
+		info = configure_info->info[category];
+
 		for( i = 0 ; i < count ; i++ )
 		{
 			if( info->detail_info[i] == NULL )
 			{
 				continue;
 			}
-			
+
 			if( !strcmp( ((type_int_range*)(info->detail_info[i]))->name , name ) )
 			{
 				*value = (type_int_range*)(info->detail_info[i]);
 				/*
-				_mmcam_dbg_log( "Get[%s] int range - min[%d],max[%d],default[%d]", 
+				_mmcam_dbg_log( "Get[%s] int range - min[%d],max[%d],default[%d]",
 						name, (*value)->min, (*value)->max, (*value)->default_value );
 				*/
 				return TRUE;
@@ -1921,12 +1945,12 @@ _mmcamcorder_conf_get_value_int_array( camera_conf* configure_info, int category
 			{
 				continue;
 			}
-			
+
 			if( !strcmp( ((type_int_array*)(info->detail_info[i]))->name , name ) )
 			{
 				*value = (type_int_array*)(info->detail_info[i]);
 				/*
-				_mmcam_dbg_log( "Get[%s] int array - [%x],count[%d],default[%d]", 
+				_mmcam_dbg_log( "Get[%s] int array - [%x],count[%d],default[%d]",
 						name, (*value)->value, (*value)->count, (*value)->default_value );
 				*/
 				return TRUE;
@@ -1954,22 +1978,22 @@ _mmcamcorder_conf_get_value_int_pair_array( camera_conf* configure_info, int cat
 
 	if( configure_info->info[category] )
 	{
-		count	= configure_info->info[category]->count;
-		info	= configure_info->info[category];
-		
+		count = configure_info->info[category]->count;
+		info = configure_info->info[category];
+
 		for( i = 0 ; i < count ; i++ )
 		{
 			if( info->detail_info[i] == NULL )
 			{
 				continue;
 			}
-			
+
 			if( !strcmp( ((type_int_pair_array*)(info->detail_info[i]))->name , name ) )
 			{
 				*value = (type_int_pair_array*)(info->detail_info[i]);
 				/*
-				_mmcam_dbg_log( "Get[%s] int pair array - [%x][%x],count[%d],default[%d][%d]", 
-						name, (*value)->value[0], (*value)->value[1], (*value)->count, 
+				_mmcam_dbg_log( "Get[%s] int pair array - [%x][%x],count[%d],default[%d][%d]",
+						name, (*value)->value[0], (*value)->value[1], (*value)->count,
 						(*value)->default_value[0], (*value)->default_value[1] );
 				*/
 				return TRUE;
@@ -1989,24 +2013,24 @@ _mmcamcorder_conf_get_value_string( camera_conf* configure_info, int category, c
 {
 	int i, count;
 	conf_detail* info;
-	
+
 	//_mmcam_dbg_log( "Entered... category[%d],name[%s]", category, name );
 
 	mmf_return_val_if_fail( configure_info, FALSE );
 	mmf_return_val_if_fail( name, FALSE );
-	
+
 	if( configure_info->info[category] )
 	{
-		count	= configure_info->info[category]->count;
-		info	= configure_info->info[category];
-		
+		count = configure_info->info[category]->count;
+		info = configure_info->info[category];
+
 		for( i = 0 ; i < count ; i++ )
 		{
 			if( info->detail_info[i] == NULL )
 			{
 				continue;
 			}
-			
+
 			if( !strcmp( ((type_string*)(info->detail_info[i]))->name , name ) )
 			{
 				*value = ((type_string*)(info->detail_info[i]))->value;
@@ -2040,8 +2064,8 @@ _mmcamcorder_conf_get_value_string_array( camera_conf* configure_info, int categ
 
 	if( configure_info->info[category] )
 	{
-		count	= configure_info->info[category]->count;
-		info	= configure_info->info[category];
+		count = configure_info->info[category]->count;
+		info = configure_info->info[category];
 
 		for( i = 0 ; i < count ; i++ )
 		{
@@ -2049,12 +2073,12 @@ _mmcamcorder_conf_get_value_string_array( camera_conf* configure_info, int categ
 			{
 				continue;
 			}
-			
+
 			if( !strcmp( ((type_string_array*)(info->detail_info[i]))->name , name ) )
 			{
 				*value = (type_string_array*)(info->detail_info[i]);
 				/*
-				_mmcam_dbg_log( "Get[%s] string array - [%x],count[%d],default[%s]", 
+				_mmcam_dbg_log( "Get[%s] string array - [%x],count[%d],default[%s]",
 						name, (*value)->value, (*value)->count, (*value)->default_value );
 				*/
 				return TRUE;
@@ -2074,7 +2098,7 @@ _mmcamcorder_conf_get_element( camera_conf* configure_info, int category, const 
 {
 	int i, count;
 	conf_detail* info;
-	
+
 	//_mmcam_dbg_log( "Entered... category[%d],name[%s]", category, name );
 
 	mmf_return_val_if_fail( configure_info, FALSE );
@@ -2082,16 +2106,16 @@ _mmcamcorder_conf_get_element( camera_conf* configure_info, int category, const 
 
 	if( configure_info->info[category] )
 	{
-		count	= configure_info->info[category]->count;
-		info	= configure_info->info[category];
-		
+		count = configure_info->info[category]->count;
+		info = configure_info->info[category];
+
 		for( i = 0 ; i < count ; i++ )
 		{
 			if( info->detail_info[i] == NULL )
 			{
 				continue;
 			}
-			
+
 			if( !strcmp( ((type_element*)(info->detail_info[i]))->name , name ) )
 			{
 				*element = (type_element*)(info->detail_info[i]);
@@ -2130,9 +2154,9 @@ int
 _mmcamcorder_conf_get_value_element_int( type_element* element, const char* name, int* value )
 {
 	int i;
-	
+
 	//_mmcam_dbg_log( "Entered..." );
-	
+
 	mmf_return_val_if_fail( element, FALSE );
 	mmf_return_val_if_fail( name, FALSE );
 
@@ -2146,7 +2170,7 @@ _mmcamcorder_conf_get_value_element_int( type_element* element, const char* name
 		}
 	}
 
-	_mmcam_dbg_warn( "Faild to get int in element... ElementName[%p],Name[%s],Count[%d]", 
+	_mmcam_dbg_warn( "Faild to get int in element... ElementName[%p],Name[%s],Count[%d]",
 		element->name, name, element->count_int );
 
 	return FALSE;
@@ -2156,9 +2180,9 @@ int
 _mmcamcorder_conf_get_value_element_string( type_element* element, const char* name, const char** value )
 {
 	int i;
-	
+
 	//_mmcam_dbg_log( "Entered..." );
-	
+
 	mmf_return_val_if_fail( element, FALSE );
 	mmf_return_val_if_fail( name, FALSE );
 
@@ -2172,7 +2196,7 @@ _mmcamcorder_conf_get_value_element_string( type_element* element, const char* n
 		}
 	}
 
-	_mmcam_dbg_warn( "Faild to get int in element... ElementName[%p],Name[%s],Count[%d]", 
+	_mmcam_dbg_warn( "Faild to get int in element... ElementName[%p],Name[%s],Count[%d]",
 		element->name, name, element->count_string );
 
 	return FALSE;
@@ -2227,7 +2251,7 @@ _mmcamcorder_conf_set_value_element_property( GstElement* gst, type_element* ele
 
 		for( i = 0 ; i < element->count_string ; i++ )
 		{
-			MMCAMCORDER_G_OBJECT_SET( gst, element->value_string[i]->name, element->value_string[i]->value );
+			MMCAMCORDER_G_OBJECT_SET_POINTER( gst, element->value_string[i]->name, element->value_string[i]->value );
 
 			_mmcam_dbg_log( "Element[%s] Set[%s] -> string[%s]",
 				element->element_name,
@@ -2248,13 +2272,13 @@ _mmcamcorder_conf_get_default_value_int( int type, int category, const char* nam
 	int count_value = 0;
 
 	//_mmcam_dbg_log( "Entered..." );
-	
+
 	mmf_return_val_if_fail( name, FALSE );
 
 	if( !_mmcamcorder_conf_get_category_size( type, category, &count_value ) )
 	{
 		_mmcam_dbg_warn( "No matched category... check it... categoty[%d]", category );
-		return FALSE;		
+		return FALSE;
 	}
 
 	if( type == CONFIGURE_TYPE_MAIN )
@@ -2277,7 +2301,7 @@ _mmcamcorder_conf_get_default_value_int( int type, int category, const char* nam
 				*value = conf_ctrl_info_table[category][i].value_int;
 				return TRUE;
 			}
-		}		
+		}
 	}
 
 	_mmcam_dbg_warn( "Failed to get default int... check it... Type[%d],Category[%d],Name[%s]", type, category, name );
@@ -2292,13 +2316,13 @@ _mmcamcorder_conf_get_default_value_string( int type, int category, const char* 
 	int count_value = 0;
 
 	//_mmcam_dbg_log( "Entered..." );
-	
+
 	mmf_return_val_if_fail( name, FALSE );
 
 	if( !_mmcamcorder_conf_get_category_size( type, category, &count_value ) )
 	{
 		_mmcam_dbg_warn( "No matched category... check it... categoty[%d]", category );
-		return FALSE;		
+		return FALSE;
 	}
 
 	if( type == CONFIGURE_TYPE_MAIN )
@@ -2328,7 +2352,7 @@ _mmcamcorder_conf_get_default_value_string( int type, int category, const char* 
 
 	_mmcam_dbg_warn( "Failed to get default string... check it... Type[%d],Category[%d],Name[%s]", type, category, name );
 
-	return FALSE;	
+	return FALSE;
 }
 
 int
@@ -2338,13 +2362,13 @@ _mmcamcorder_conf_get_default_element( int type, int category, const char* name,
 	int count_value = 0;
 
 	//_mmcam_dbg_log( "Entered..." );
-	
+
 	mmf_return_val_if_fail( name, FALSE );
 
 	if( !_mmcamcorder_conf_get_category_size( type, category, &count_value ) )
 	{
 		_mmcam_dbg_warn( "No matched category... check it... categoty[%d]", category );
-		return FALSE;		
+		return FALSE;
 	}
 
 	if( type == CONFIGURE_TYPE_MAIN )
@@ -2396,7 +2420,7 @@ _mmcamcorder_conf_get_category_size( int type, int category, int* size )
 		*size = (int)conf_ctrl_category_size[category];
 	}
 
-	return TRUE;	
+	return TRUE;
 }
 
 void
@@ -2478,7 +2502,7 @@ _mmcamcorder_conf_print_info( camera_conf** configure_info )
 							for( k = 0 ; k < temp_element->count_string ; k++ )
 							{
 								g_print( "                          - STRING[%d] Name[%s],Value[%s]\n", k, temp_element->value_string[k]->name, temp_element->value_string[k]->value );
-							}							
+							}
 							break;
 						default:
 							g_print( "[ConfigureInfo] : Not matched value type... So can not print data... check it... Name[%s],type[%d]\n", ((type_int*)((*configure_info)->info[i]->detail_info[j]))->name, type );
@@ -2489,7 +2513,7 @@ _mmcamcorder_conf_print_info( camera_conf** configure_info )
 				{
 					g_print( "[ConfigureInfo] : Failed to get value type." );
 				}
-			}			
+			}
 		}
 	}
 
@@ -2505,12 +2529,12 @@ __mmcamcorder_get_audio_codec_element(MMHandleType handle)
 	int codec_type = MM_AUDIO_CODEC_INVALID;
 	mmf_camcorder_t *hcamcorder= MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
-	
+
 	mmf_return_val_if_fail(hcamcorder, NULL);
 	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
 
 	mmf_return_val_if_fail(sc, NULL);
-	
+
 	_mmcam_dbg_log("");
 
 	/* Check element availability */
@@ -2520,7 +2544,7 @@ __mmcamcorder_get_audio_codec_element(MMHandleType handle)
 	{
 		case MM_AUDIO_CODEC_AMR:
 			codec_type_str = "AMR";
-			break;			
+			break;
 		case MM_AUDIO_CODEC_G723_1:
 			codec_type_str = "G723_1";
 			break;
@@ -2553,9 +2577,9 @@ __mmcamcorder_get_audio_codec_element(MMHandleType handle)
 			return NULL;
 	}
 
-	_mmcamcorder_conf_get_element( hcamcorder->conf_main, 
+	_mmcamcorder_conf_get_element( hcamcorder->conf_main,
 				CONFIGURE_CATEGORY_MAIN_AUDIO_ENCODER,
-				codec_type_str, 
+				codec_type_str,
 				&telement );
 
 	return telement;
@@ -2570,7 +2594,7 @@ __mmcamcorder_get_video_codec_element(MMHandleType handle)
 	int codec_type = MM_VIDEO_CODEC_INVALID;
 	mmf_camcorder_t *hcamcorder= MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
-	
+
 	mmf_return_val_if_fail(hcamcorder, NULL);
 	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
 
@@ -2598,7 +2622,7 @@ __mmcamcorder_get_video_codec_element(MMHandleType handle)
 		case MM_VIDEO_CODEC_MPEG1:
 			codec_type_str = "MPEG1";
 			break;
-		case MM_VIDEO_CODEC_THEORA:		// OGG
+		case MM_VIDEO_CODEC_THEORA:
 			codec_type_str = "THEORA";
 			break;
 		default:
@@ -2606,9 +2630,9 @@ __mmcamcorder_get_video_codec_element(MMHandleType handle)
 			return NULL;
 	}
 
-	_mmcamcorder_conf_get_element( hcamcorder->conf_main, 
+	_mmcamcorder_conf_get_element( hcamcorder->conf_main,
 				CONFIGURE_CATEGORY_MAIN_VIDEO_ENCODER,
-				codec_type_str, 
+				codec_type_str,
 				&telement );
 
 	return telement;
@@ -2623,12 +2647,12 @@ __mmcamcorder_get_image_codec_element(MMHandleType handle)
 	int codec_type = MM_IMAGE_CODEC_INVALID;
 	mmf_camcorder_t *hcamcorder= MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
-	
+
 	mmf_return_val_if_fail(hcamcorder, NULL);
 	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
 
 	mmf_return_val_if_fail(sc, NULL);
-	
+
 	_mmcam_dbg_log("");
 
 	/* Check element availability */
@@ -2683,9 +2707,9 @@ __mmcamcorder_get_image_codec_element(MMHandleType handle)
 			return NULL;
 	}
 
-	_mmcamcorder_conf_get_element( hcamcorder->conf_main, 
+	_mmcamcorder_conf_get_element( hcamcorder->conf_main,
 				CONFIGURE_CATEGORY_MAIN_IMAGE_ENCODER,
-				codec_type_str, 
+				codec_type_str,
 				&telement );
 
 	return telement;
@@ -2700,12 +2724,12 @@ __mmcamcorder_get_file_format_element(MMHandleType handle)
 	int file_type = MM_FILE_FORMAT_INVALID;
 	mmf_camcorder_t *hcamcorder= MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
-	
+
 	mmf_return_val_if_fail(hcamcorder, NULL);
 	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
 
 	mmf_return_val_if_fail(sc, NULL);
-	
+
 	_mmcam_dbg_log("");
 
 	/* Check element availability */
@@ -2752,14 +2776,17 @@ __mmcamcorder_get_file_format_element(MMHandleType handle)
 		case MM_FILE_FORMAT_MATROSKA:
 			mux_type_str = "MATROSKA";
 			break;
+		case MM_FILE_FORMAT_M2TS:
+			mux_type_str = "M2TS";
+			break;
 		default:
 			_mmcam_dbg_err( "Not supported file format[%d]", file_type );
 			return NULL;
 	}
 
-	_mmcamcorder_conf_get_element( hcamcorder->conf_main, 
+	_mmcamcorder_conf_get_element( hcamcorder->conf_main,
 				CONFIGURE_CATEGORY_MAIN_MUX,
-				mux_type_str, 
+				mux_type_str,
 				&telement );
 
 	return telement;
@@ -2772,7 +2799,7 @@ _mmcamcorder_get_type_element(MMHandleType handle, int type)
 	type_element *telement = NULL;
 
 	_mmcam_dbg_log("type:%d", type);
-	
+
 	switch(type)
 	{
 		case MM_CAM_AUDIO_ENCODER:
@@ -2939,6 +2966,9 @@ int _mmcamcorder_get_mux_format(MMHandleType handle, const char *name)
 		mux_index = MM_FILE_FORMAT_MMF;
 	} else if (!strcmp(name, "MATROSKA")) {
 		mux_index = MM_FILE_FORMAT_MATROSKA;
+	} else if (!strcmp(name, "M2TS")) {
+		mux_index = MM_FILE_FORMAT_M2TS;
+
 	}
 
 	/*_mmcam_dbg_log("mux index %d", mux_index);*/

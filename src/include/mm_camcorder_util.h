@@ -25,7 +25,6 @@
 /*=======================================================================================
 | INCLUDE FILES										|
 ========================================================================================*/
-#include <camsrcjpegenc.h>
 #include <linux/magic.h>
 
 
@@ -55,7 +54,7 @@ do { \
 	} else { \
 		item->object = G_OBJECT(x_pad); \
 		item->category = x_category; \
-		item->handler_id = gst_pad_add_buffer_probe(x_pad, G_CALLBACK(x_callback), x_hcamcorder); \
+		item->handler_id = gst_pad_add_probe(x_pad, GST_PAD_PROBE_TYPE_BUFFER, x_callback, x_hcamcorder, NULL); \
 		x_hcamcorder->buffer_probes = g_list_append(x_hcamcorder->buffer_probes, item); \
 		_mmcam_dbg_log("Adding buffer probe on [%s:%s] - [ID : %lu], [Category : %x] ", GST_DEBUG_PAD_NAME(item->object), item->handler_id, item->category); \
 	} \
@@ -73,7 +72,7 @@ do { \
 	} else { \
 		item->object =G_OBJECT(x_pad); \
 		item->category = x_category; \
-		item->handler_id = gst_pad_add_event_probe(x_pad, G_CALLBACK(x_callback), x_hcamcorder); \
+		item->handler_id = gst_pad_add_probe(x_pad, GST_PAD_PROBE_TYPE_EVENT_BOTH, x_callback, x_hcamcorder, NULL); \
 		x_hcamcorder->event_probes = g_list_append(x_hcamcorder->event_probes, item); \
 		_mmcam_dbg_log("Adding event probe on [%s:%s] - [ID : %lu], [Category : %x] ", GST_DEBUG_PAD_NAME(item->object), item->handler_id, item->category); \
 	} \
@@ -93,7 +92,7 @@ do { \
 		item->handler_id = g_signal_connect(G_OBJECT(x_object), x_signal,\
 						    G_CALLBACK(x_callback), x_hcamcorder ); \
 		x_hcamcorder->signals = g_list_append(x_hcamcorder->signals, item); \
-		_mmcam_dbg_log("Connecting signal on [%s] - [ID : %lu], [Category : %x] ", GST_OBJECT_NAME(item->object), item->handler_id, item->category); \
+		_mmcam_dbg_log("Connecting signal on [%s][%p] - [ID : %lu], [Category : %x] ", GST_OBJECT_NAME(item->object), item->object, item->handler_id, item->category); \
 	} \
 } while (0);
 
@@ -113,7 +112,32 @@ do { \
 #define MMCAMCORDER_G_OBJECT_SET(obj, name, value) \
 do { \
 	if (obj) { \
-		if(g_object_class_find_property(G_OBJECT_GET_CLASS(G_OBJECT(obj)), name)) { \
+		GParamSpec *spec = g_object_class_find_property(G_OBJECT_GET_CLASS(G_OBJECT(obj)), name);\
+		if(spec) { \
+			if (spec->value_type == G_TYPE_INT64) {\
+				g_object_set(G_OBJECT(obj), name, (gint64)value, NULL); \
+			} else if (spec->value_type == G_TYPE_UINT64) { \
+				g_object_set(G_OBJECT(obj), name, (guint64)value, NULL); \
+			} else if (spec->value_type == G_TYPE_FLOAT) { \
+				g_object_set(G_OBJECT(obj), name, (float)value, NULL); \
+			} else if (spec->value_type == G_TYPE_DOUBLE) { \
+				g_object_set(G_OBJECT(obj), name, (double)value, NULL); \
+			} else { \
+				g_object_set(G_OBJECT(obj), name, value, NULL); \
+			} \
+		} else { \
+			_mmcam_dbg_warn ("The object doesn't have a property named(%s)", name); \
+		} \
+	} else { \
+		_mmcam_dbg_err("Null object"); \
+	} \
+} while(0);
+
+#define MMCAMCORDER_G_OBJECT_SET_POINTER(obj, name, value) \
+do { \
+	if (obj) { \
+		GParamSpec *spec = g_object_class_find_property(G_OBJECT_GET_CLASS(G_OBJECT(obj)), name);\
+		if(spec) { \
 			g_object_set(G_OBJECT(obj), name, value, NULL); \
 		} else { \
 			_mmcam_dbg_warn ("The object doesn't have a property named(%s)", name); \
@@ -136,7 +160,7 @@ do { \
 	msg.id = msg_id;\
 	msg.param.code = msg_code;\
 	_mmcam_dbg_log("msg id : %x, code : %x", msg_id, msg_code);\
-	_mmcamcroder_send_message((MMHandleType)handle, &msg);\
+	_mmcamcorder_send_message((MMHandleType)handle, &msg);\
 }
 
 
@@ -185,68 +209,6 @@ typedef struct {
 	GMutex lock;			/**< mutex for item */
 } _MMCamcorderMsgItem;
 
-/**
- * Structure of zero copy image buffer
- */
-#define SCMN_IMGB_MAX_PLANE         (4)
-
-/* image buffer definition ***************************************************
-
-    +------------------------------------------+ ---
-    |                                          |  ^
-    |     a[], p[]                             |  |
-    |     +---------------------------+ ---    |  |
-    |     |                           |  ^     |  |
-    |     |<---------- w[] ---------->|  |     |  |
-    |     |                           |  |     |  |
-    |     |                           |        |
-    |     |                           |  h[]   |  e[]
-    |     |                           |        |
-    |     |                           |  |     |  |
-    |     |                           |  |     |  |
-    |     |                           |  v     |  |
-    |     +---------------------------+ ---    |  |
-    |                                          |  v
-    +------------------------------------------+ ---
-
-    |<----------------- s[] ------------------>|
-*/
-
-typedef struct
-{
-	/* width of each image plane */
-	int w[SCMN_IMGB_MAX_PLANE];
-	/* height of each image plane */
-	int h[SCMN_IMGB_MAX_PLANE];
-	/* stride of each image plane */
-	int s[SCMN_IMGB_MAX_PLANE];
-	/* elevation of each image plane */
-	int e[SCMN_IMGB_MAX_PLANE];
-	/* user space address of each image plane */
-	void *a[SCMN_IMGB_MAX_PLANE];
-	/* physical address of each image plane, if needs */
-	void *p[SCMN_IMGB_MAX_PLANE];
-	/* color space type of image */
-	int cs;
-	/* left postion, if needs */
-	int x;
-	/* top position, if needs */
-	int y;
-	/* to align memory */
-	int __dummy2;
-	/* arbitrary data */
-	int data[16];
-	/* dmabuf or ion fd */
-	int fd[SCMN_IMGB_MAX_PLANE];
-	/* flag for buffer share */
-	int buf_share_method;
-	/* Y plane size */
-	int y_size;
-	/* UV plane size */
-	int uv_size;
-	/* Tizen buffer object of each image plane */
-	void *bo[SCMN_IMGB_MAX_PLANE];
-} SCMN_IMGB;
 
 /*=======================================================================================
 | CONSTANT DEFINITIONS									|
@@ -255,6 +217,7 @@ typedef struct
 #define NANO_SEC_PER_MILI_SEC                   1000000
 #define _MMCAMCORDER_HANDLER_CATEGORY_ALL \
 	(_MMCAMCORDER_HANDLER_PREVIEW | _MMCAMCORDER_HANDLER_VIDEOREC |_MMCAMCORDER_HANDLER_STILLSHOT | _MMCAMCORDER_HANDLER_AUDIOREC)
+#define G_DBUS_REPLY_TIMEOUT (120 * 1000)
 
 /*=======================================================================================
 | GLOBAL FUNCTION PROTOTYPES								|
@@ -270,19 +233,19 @@ gboolean _mmcamcorder_add_elements_to_bin(GstBin *bin, GList *element_list);
 gboolean _mmcamcorder_link_elements(GList *element_list);
 
 /* Message */
-gboolean _mmcamcroder_msg_callback(void *data);
-gboolean _mmcamcroder_send_message(MMHandleType handle, _MMCamcorderMsgItem *data);
-void _mmcamcroder_remove_message_all(MMHandleType handle);
+gboolean _mmcamcorder_msg_callback(void *data);
+gboolean _mmcamcorder_send_message(MMHandleType handle, _MMCamcorderMsgItem *data);
+void _mmcamcorder_remove_message_all(MMHandleType handle);
 
 /* Pixel format */
-int _mmcamcorder_get_pixel_format(GstBuffer *buffer);
+int _mmcamcorder_get_pixel_format(GstCaps *pad);
 int _mmcamcorder_get_pixtype(unsigned int fourcc);
 unsigned int _mmcamcorder_get_fourcc(int pixtype, int codectype, int use_zero_copy_format);
 
 /* JPEG encode */
 gboolean _mmcamcorder_encode_jpeg(void *src_data, unsigned int src_width, unsigned int src_height,
                                   int src_format, unsigned int src_length, unsigned int jpeg_quality,
-                                  void **result_data, unsigned int *result_length, int enc_type);
+                                  void **result_data, unsigned int *result_length);
 /* resize */
 gboolean _mmcamcorder_resize_frame(unsigned char *src_data, unsigned int src_width, unsigned int src_height, unsigned int src_length, int src_format,
                                    unsigned char **dst_data, unsigned int *dst_width, unsigned int *dst_height, unsigned int *dst_length);
@@ -300,17 +263,20 @@ gboolean _mmcamcorder_write_loci(FILE *f, _MMCamcorderLocationInfo info);
 gboolean _mmcamcorder_write_geodata(FILE *f,_MMCamcorderLocationInfo info);
 gboolean _mmcamcorder_write_udta(FILE *f, int gps_enable, _MMCamcorderLocationInfo info, _MMCamcorderLocationInfo geotag);
 guint64 _mmcamcorder_get_container_size(const guchar *size);
+guint64 _mmcamcorder_get_container_size64(const guchar *size);
 gboolean _mmcamcorder_update_composition_matrix(FILE *f, int orientation);
 
 /* File system */
-int _mmcamcorder_get_freespace(const gchar *path, guint64 *free_space);
-int _mmcamcorder_get_freespace_except_system(guint64 *free_space);
+int _mmcamcorder_get_freespace(const gchar *path, const gchar *root_directory, guint64 *free_space);
 int _mmcamcorder_get_file_size(const char *filename, guint64 *size);
 int _mmcamcorder_get_file_system_type(const gchar *path, int *file_system_type);
-gboolean _mmcamcorder_check_file_path(const gchar *path);
+int _mmcamcorder_get_root_directory(char **root_directory);
 
 /* Task */
-void *_mmcamcorder_util_task_thread_func(void *data);
+void *_mmcamcorder_task_thread_func(void *data);
+
+/* device */
+int _mmcamcorder_get_device_flash_brightness(int *brightness);
 
 #ifdef __cplusplus
 }

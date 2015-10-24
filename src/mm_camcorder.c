@@ -47,7 +47,11 @@ int mm_camcorder_create(MMHandleType *camcorder, MMCamPreset *info)
 
 	_mmcam_dbg_err("");
 
+	traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:CREATE");
+
 	error = _mmcamcorder_create(camcorder, info);
+
+	traceEnd(TTRACE_TAG_CAMERA);
 
 	_mmcam_dbg_err("END");
 
@@ -63,7 +67,11 @@ int mm_camcorder_destroy(MMHandleType camcorder)
 
 	_mmcam_dbg_err("");
 
+	traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:DESTROY");
+
 	error = _mmcamcorder_destroy(camcorder);
+
+	traceEnd(TTRACE_TAG_CAMERA);
 
 	_mmcam_dbg_err("END!!!");
 
@@ -81,7 +89,11 @@ int mm_camcorder_realize(MMHandleType camcorder)
 
 	_MMCAMCORDER_LOCK_ASM(camcorder);
 
+	traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:REALIZE");
+
 	error = _mmcamcorder_realize(camcorder);
+
+	traceEnd(TTRACE_TAG_CAMERA);
 
 	_MMCAMCORDER_UNLOCK_ASM(camcorder);
 
@@ -101,7 +113,11 @@ int mm_camcorder_unrealize(MMHandleType camcorder)
 
 	_MMCAMCORDER_LOCK_ASM(camcorder);
 
+	traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:UNREALIZE");
+
 	error = _mmcamcorder_unrealize(camcorder);
+
+	traceEnd(TTRACE_TAG_CAMERA);
 
 	_MMCAMCORDER_UNLOCK_ASM(camcorder);
 
@@ -121,7 +137,11 @@ int mm_camcorder_start(MMHandleType camcorder)
 
 	_MMCAMCORDER_LOCK_ASM(camcorder);
 
+	traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:START");
+
 	error = _mmcamcorder_start(camcorder);
+
+	traceEnd(TTRACE_TAG_CAMERA);
 
 	_MMCAMCORDER_UNLOCK_ASM(camcorder);
 
@@ -141,7 +161,11 @@ int mm_camcorder_stop(MMHandleType camcorder)
 
 	_MMCAMCORDER_LOCK_ASM(camcorder);
 
+	traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:STOP");
+
 	error = _mmcamcorder_stop(camcorder);
+
+	traceEnd(TTRACE_TAG_CAMERA);
 
 	_MMCAMCORDER_UNLOCK_ASM(camcorder);
 
@@ -352,7 +376,7 @@ int mm_camcorder_set_attributes(MMHandleType camcorder,  char **err_attr_name, c
 	va_start (var_args, attribute_name);
 	ret = _mmcamcorder_set_attributes(camcorder, err_attr_name, attribute_name, var_args);
 	va_end (var_args);
-	
+
 	return ret;
 }
 
@@ -360,6 +384,11 @@ int mm_camcorder_set_attributes(MMHandleType camcorder,  char **err_attr_name, c
 int mm_camcorder_get_attribute_info(MMHandleType camcorder, const char *attribute_name, MMCamAttrsInfo *info)
 {
 	return _mmcamcorder_get_attribute_info(camcorder, attribute_name, info);
+}
+
+int mm_camcorder_get_fps_list_by_resolution(MMHandleType camcorder, int width, int height, MMCamAttrsInfo *fps_info)
+{
+	return _mmcamcorder_get_fps_array_by_resolution(camcorder, width, height, fps_info);
 }
 
 

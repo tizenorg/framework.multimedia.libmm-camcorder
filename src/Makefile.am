@@ -35,38 +35,47 @@ libmmfcamcorder_la_SOURCES = mm_camcorder.c \
 libmmfcamcorder_la_CFLAGS = -I$(srcdir)/include \
 			     $(GST_CFLAGS) \
 			     $(GST_PLUGIN_BASE_CFLAGS) \
-			     $(GST_INTERFACES_CFLAGS) \
+			     $(GST_VIDEO_CFLAGS) \
 			     $(GST_APP_CFLAGS) \
 			     $(EXIF_CFLAGS) \
 			     $(MM_COMMON_CFLAGS) \
 			     $(MMSESSION_CFLAGS) \
 			     $(MMSOUND_CFLAGS) \
 			     $(SNDFILE_CFLAGS) \
-			     $(CAMSRCJPEGENC_CFLAGS) \
 			     $(VCONF_CFLAGS) \
 			     $(MMUTIL_IMGP_CFLAGS) \
+			     $(MMUTIL_JPEG_CFLAGS) \
 			     $(AUDIOSESSIONMGR_CFLAGS) \
 			     $(DBUS_CFLAGS) \
+			     $(TTRACE_CFLAGS) \
+			     $(TBM_CFLAGS) \
+			     $(STORAGE_CFLAGS) \
 			     $(SYSTEMINFO_CFLAGS)
 
 libmmfcamcorder_la_LIBADD = \
+			    $(GLIB_LIBS) \
+			    $(GIO_LIBS) \
 			    $(GST_LIBS) \
 			    $(GST_PLUGIN_BASE_LIBS) \
-			    $(GST_INTERFACES_LIBS) \
+			    $(GST_VIDEO_LIBS) \
 			    $(GST_APP_LIBS) \
 			    $(MM_COMMON_LIBS) \
 			    $(EXIF_LIBS) \
 			    $(MMSESSION_LIBS) \
 			    $(MMSOUND_LIBS) \
 			    $(SNDFILE_LIBS) \
-			    $(CAMSRCJPEGENC_LIBS) \
 			    $(VCONF_LIBS) \
 			    $(MMUTIL_IMGP_LIBS) \
-			    $(DBUS_LIBS) \
+			    $(MMUTIL_JPEG_LIBS) \
+			    $(TBM_LIBS) \
+			    $(STORAGE_LIBS) \
+			    $(TTRACE_LIBS) \
 			    $(AUDIOSESSIONMGR_LIBS)
 
 libmmfcamcorder_la_CFLAGS += -DMMF_LOG_OWNER=0x010 -D_INTERNAL_SESSION_MANAGER_ -D_FILE_OFFSET_BITS=64
-libmmfcamcorder_la_CFLAGS += -fdata-sections -ffunction-sections -Wl,--gc-sections
+libmmfcamcorder_la_CFLAGS += -fdata-sections -ffunction-sections
+libmmfcamcorder_la_LDFLAGS = -Wl,--gc-sections \
+			     -Wl,-init,_mmcamcorder_constructor
 libmmfcamcorder_la_LIBADD += $(SYSTEMINFO_LIBS)
 
 install-exec-hook:

@@ -22,9 +22,10 @@
 /*=======================================================================================
 |  INCLUDE FILES									|
 =======================================================================================*/
+#include <stdlib.h>
 #include <sys/time.h>
 #include <sys/times.h>
-#include <gst/interfaces/cameracontrol.h>
+#include <gst/video/cameracontrol.h>
 #include <mm_sound.h>
 #include "mm_camcorder_internal.h"
 #include "mm_camcorder_stillshot.h"
@@ -52,6 +53,8 @@
 #define TRY_LOCK_MAX_COUNT      100
 #define TRY_LOCK_TIME           20000   /* ms */
 #define SOUND_THREAD_CAPTURE_SOUND 20
+#define H264_PREVIEW_BITRATE    1024*10 /* kbps */
+#define H264_PREVIEW_NEWGOP_INTERVAL    1000 /* ms */
 #define _MMCAMCORDER_MAKE_THUMBNAIL_INTERNAL_ENCODE
 
 
@@ -63,14 +66,10 @@
 int _mmcamcorder_image_cmd_capture(MMHandleType handle);
 int _mmcamcorder_image_cmd_preview_start(MMHandleType handle);
 int _mmcamcorder_image_cmd_preview_stop(MMHandleType handle);
-static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffer1, GstBuffer *buffer2, GstBuffer *buffer3, gpointer u_data);
-
-/* Function for JPEG capture with Encode bin */
-static gboolean	__mmcamcorder_encodesink_handoff_callback(GstElement *fakesink, GstBuffer *buffer, GstPad *pad, gpointer u_data);
+static void __mmcamcorder_image_capture_cb(GstElement *element, GstSample *sample1, GstSample *sample2, GstSample *sample3, gpointer u_data);
 
 /* sound status changed callback */
 static void __sound_status_changed_cb(keynode_t* node, void *data);
-static void __volume_level_changed_cb(void* user_data);
 
 /*=======================================================================================
 |  FUNCTION DEFINITIONS									|
@@ -127,7 +126,7 @@ int _mmcamcorder_create_stillshot_pipeline(MMHandleType handle)
 	/* connect handoff signal to get capture data */
 	MMCAMCORDER_SIGNAL_CONNECT(sc->encode_element[_MMCAMCORDER_ENCSINK_SINK].gst,
 	                           _MMCAMCORDER_HANDLER_STILLSHOT, "handoff",
-	                           G_CALLBACK(__mmcamcorder_encodesink_handoff_callback),
+	                           G_CALLBACK(__mmcamcorder_handoff_callback),
 	                           hcamcorder);
 
 	return MM_ERROR_NONE;
@@ -185,7 +184,7 @@ int _mmcamcorder_remove_stillshot_pipeline(MMHandleType handle)
 			return ret;
 		}
 
-		_mmcamcorder_remove_all_handlers(handle, _MMCAMCORDER_HANDLER_STILLSHOT);
+		_mmcamcorder_remove_all_handlers(handle, _MMCAMCORDER_HANDLER_STILLSHOT | _MMCAMCORDER_HANDLER_VIDEOREC);
 
 		GstPad *reqpad = NULL;
 
@@ -225,11 +224,19 @@ void _mmcamcorder_destroy_video_capture_pipeline(MMHandleType handle)
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", TRUE);
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
 
+		traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:UNREALIZE:SET_NULL_TO_PIPELINE");
+
 		_mmcamcorder_gst_set_state(handle, sc->element[_MMCAMCORDER_MAIN_PIPE].gst, GST_STATE_NULL);
+
+		traceEnd(TTRACE_TAG_CAMERA);
 
 		_mmcamcorder_remove_all_handlers(handle, _MMCAMCORDER_HANDLER_CATEGORY_ALL);
 
+		traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:UNREALIZE:UNREF_PIPELINE");
+
 		gst_object_unref(sc->element[_MMCAMCORDER_MAIN_PIPE].gst);
+
+		traceEnd(TTRACE_TAG_CAMERA);
 		/* NULL initialization will be done in _mmcamcorder_element_release_noti */
 	}
 }
@@ -253,7 +260,6 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 	const char *videosrc_name = NULL;
 
 	GstCameraControl *control = NULL;
-	GstClock *pipe_clock = NULL;
 
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	_MMCamcorderImageInfo *info = NULL;
@@ -270,6 +276,11 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 
 	info = sc->info_image;
 
+	if (info->capturing) {
+		_mmcam_dbg_err("already capturing");
+		return MM_ERROR_CAMCORDER_DEVICE_BUSY;
+	}
+
 	_mmcamcorder_conf_get_value_int(hcamcorder->conf_main,
 	                                CONFIGURE_CATEGORY_MAIN_CAPTURE,
 	                                "UseCaptureMode",
@@ -281,11 +292,6 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 	                              &VideosrcElement);
 
 	_mmcamcorder_conf_get_value_element_name(VideosrcElement, &videosrc_name);
-
-	if (info->capturing) {
-		ret = MM_ERROR_CAMCORDER_DEVICE_BUSY;
-		goto cmd_error;
-	}
 
 	/* get current state */
 	mm_camcorder_get_state(handle, &current_state);
@@ -312,11 +318,13 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 		err_name = NULL;
 	}
 
+	ret = MM_ERROR_NONE;
+
 	/* check capture count */
 	if (info->count < 1) {
 		_mmcam_dbg_err("capture count[%d] is invalid", info->count);
 		ret = MM_ERROR_CAMCORDER_INVALID_ARGUMENT;
-		goto cmd_error;
+		goto cmd_done;
 	} else if (info->count == 1) {
 		info->type = _MMCamcorder_SINGLE_SHOT;
 	} else {
@@ -333,8 +341,7 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 	}
 
 	_mmcam_dbg_log("preview(%dx%d,fmt:%d), capture(%dx%d,fmt:%d), count(%d), hdr mode(%d), interval (%d)",
-	               width, height, info->preview_format,
-	               info->width, info->height, cap_format,
+	               width, height, info->preview_format, info->width, info->height, cap_format,
 	               info->count, info->hdr_capture_mode, info->interval);
 
 	/* check state */
@@ -343,7 +350,7 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 		    info->hdr_capture_mode != MM_CAMCORDER_HDR_OFF) {
 			_mmcam_dbg_err("does not support multi/HDR capture while recording");
 			ret = MM_ERROR_CAMCORDER_INVALID_STATE;
-			goto cmd_error;
+			goto cmd_done;
 		}
 
 		/* check capture size if ZSL is not supported*/
@@ -398,7 +405,8 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 
 		if (!GST_IS_CAMERA_CONTROL(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst)) {
 			_mmcam_dbg_err("Can't cast Video source into camera control.");
-			return MM_ERROR_CAMCORDER_NOT_SUPPORTED;
+			ret = MM_ERROR_CAMCORDER_NOT_SUPPORTED;
+			goto cmd_done;
 		}
 
 		control = GST_CAMERA_CONTROL(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst);
@@ -412,7 +420,7 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 		if (current_state >= MM_CAMCORDER_STATE_RECORDING) {
 			_mmcam_dbg_err("could not capture in this target while recording");
 			ret = MM_ERROR_CAMCORDER_INVALID_STATE;
-			goto cmd_error;
+			goto cmd_done;
 		}
 
 		if (UseCaptureMode) {
@@ -436,12 +444,18 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 			/* make pipeline state as READY */
 			ret = _mmcamcorder_gst_set_state(handle, sc->element[_MMCAMCORDER_MAIN_PIPE].gst, GST_STATE_READY);
 
+			if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+				if (!_mmcamcorder_recreate_decoder_for_encoded_preview(handle)) {
+					return MM_ERROR_CAMCORDER_INTERNAL;
+				}
+			}
+
 			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", FALSE);
 			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", FALSE);
 
 			if (ret != MM_ERROR_NONE) {
 				_mmcam_dbg_err("failed to set state PAUSED %x", ret);
-				return ret;
+				goto cmd_done;
 			}
 
 			if (UseCaptureMode) {
@@ -465,7 +479,8 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 			ret = _mmcamcorder_set_videosrc_caps(handle, sc->fourcc, set_width, set_height, fps, rotation);
 			if (!ret) {
 				_mmcam_dbg_err("_mmcamcorder_set_videosrc_caps failed");
-				return MM_ERROR_CAMCORDER_INTERNAL;
+				ret = MM_ERROR_CAMCORDER_INTERNAL;
+				goto cmd_done;
 			}
 
 			info->resolution_change = TRUE;
@@ -473,13 +488,9 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 			/* make pipeline state as PLAYING */
 			ret = _mmcamcorder_gst_set_state(handle, sc->element[_MMCAMCORDER_MAIN_PIPE].gst, GST_STATE_PLAYING);
 			if (ret != MM_ERROR_NONE) {
-				_mmcam_dbg_err("failed to set state PAUSED %x", ret);
-				return ret;
+				_mmcam_dbg_err("failed to set state PLAYING %x", ret);
+				goto cmd_done;
 			}
-
-			/* FIXME: consider delay */
-			pipe_clock = gst_pipeline_get_clock(GST_PIPELINE(sc->element[_MMCAMCORDER_MAIN_PIPE].gst));
-			sc->stillshot_time = gst_clock_get_time(pipe_clock) - gst_element_get_base_time(GST_ELEMENT(sc->element[_MMCAMCORDER_MAIN_PIPE].gst));
 
 			_mmcam_dbg_log("Change to target resolution(%d, %d)", set_width, set_height);
 		} else {
@@ -491,7 +502,7 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 		ret = _mmcamcorder_create_stillshot_pipeline((MMHandleType)hcamcorder);
 		if (ret != MM_ERROR_NONE) {
 			_mmcam_dbg_err("failed to create encodesinkbin %x", ret);
-			return ret;
+			goto cmd_done;
 		}
 
 		ret = mm_camcorder_get_attributes(handle, &err_name,
@@ -510,6 +521,9 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_SINK].gst,"signal-handoffs", TRUE);
 		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "block", FALSE);
 
+		/* Prepare for the shutter sound when it's the bencbin mode capture */
+		sc->info_video->is_firstframe = TRUE;
+
 		/* set push encoding buffer as TRUE */
 		sc->info_video->push_encoding_buffer = PUSH_ENCODING_BUFFER_INIT;
 
@@ -517,7 +531,7 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 		ret = _mmcamcorder_gst_set_state(handle, sc->encode_element[_MMCAMCORDER_ENCODE_MAIN_PIPE].gst, GST_STATE_PLAYING);
 		if (ret != MM_ERROR_NONE) {
 			_mmcam_dbg_err("failed to set state PLAYING %x", ret);
-			return ret;
+			goto cmd_done;
 		}
 	}
 
@@ -531,7 +545,6 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 		    !info->hdr_capture_mode) {
 			_mmcamcorder_sound_solo_play((MMHandleType)hcamcorder, _MMCAMCORDER_FILEPATH_CAPTURE_SND, FALSE);
 		}
-
 		/* set flag */
 		info->played_capture_sound = TRUE;
 	} else {
@@ -539,10 +552,11 @@ int _mmcamcorder_image_cmd_capture(MMHandleType handle)
 		info->played_capture_sound = FALSE;
 	}
 
-	return ret;
+cmd_done:
+	if (ret != MM_ERROR_NONE) {
+		info->capturing = FALSE;
+	}
 
-cmd_error:
-	info->capturing = FALSE;
 	return ret;
 }
 
@@ -697,6 +711,13 @@ int _mmcamcorder_image_cmd_preview_start(MMHandleType handle)
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", TRUE);
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
 				ret = _mmcamcorder_gst_set_state(handle, pipeline, GST_STATE_READY);
+
+				if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+					if (!_mmcamcorder_recreate_decoder_for_encoded_preview(handle)) {
+						return MM_ERROR_CAMCORDER_INTERNAL;
+					}
+				}
+
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", FALSE);
 				MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", FALSE);
 				if (ret != MM_ERROR_NONE) {
@@ -731,10 +752,19 @@ int _mmcamcorder_image_cmd_preview_start(MMHandleType handle)
 			_mmcamcorder_sound_finalize(handle);
 		}
 	} else {
+		if (info->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst, "newgop-interval", H264_PREVIEW_NEWGOP_INTERVAL);
+		}
+
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", FALSE);
 		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", FALSE);
 
+		traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:START:SET_PLAYING_TO_PIPELINE");
+
 		ret = _mmcamcorder_gst_set_state(handle, pipeline, GST_STATE_PLAYING);
+
+		traceEnd(TTRACE_TAG_CAMERA);
+
 		if (ret != MM_ERROR_NONE) {
 			goto cmd_error;
 		}
@@ -749,14 +779,8 @@ int _mmcamcorder_image_cmd_preview_start(MMHandleType handle)
 
 			_mmcam_dbg_log("sound status %d", info->sound_status);
 
-			/* get volume level */
-			mm_sound_volume_get_value(VOLUME_TYPE_SYSTEM, &info->volume_level);
-
-			_mmcam_dbg_log("volume level %d", info->volume_level);
-
 			/* register changed_cb */
 			vconf_notify_key_changed(VCONFKEY_SETAPPL_SOUND_STATUS_BOOL, __sound_status_changed_cb, hcamcorder);
-			mm_sound_volume_add_callback(VOLUME_TYPE_SYSTEM, __volume_level_changed_cb, hcamcorder);
 		}
 	}
 
@@ -820,7 +844,11 @@ int _mmcamcorder_image_cmd_preview_stop(MMHandleType handle)
 	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", TRUE);
 	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", TRUE);
 
+	traceBegin(TTRACE_TAG_CAMERA, "MMCAMCORDER:STOP:SET_READY_TO_PIPELINE");
+
 	ret = _mmcamcorder_gst_set_state(handle, pipeline, GST_STATE_READY);
+
+	traceEnd(TTRACE_TAG_CAMERA);
 
 	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "empty-buffers", FALSE);
 	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "empty-buffers", FALSE);
@@ -914,12 +942,11 @@ void __mmcamcorder_init_stillshot_info (MMHandleType handle)
 }
 
 
-int __mmcamcorder_capture_save_exifinfo(MMHandleType handle, MMCamcorderCaptureDataType *original, MMCamcorderCaptureDataType *thumbnail)
+int __mmcamcorder_capture_save_exifinfo(MMHandleType handle, MMCamcorderCaptureDataType *original, MMCamcorderCaptureDataType *thumbnail, int provide_exif)
 {
 	int ret = MM_ERROR_NONE;
 	unsigned char *data = NULL;
 	unsigned int datalen = 0;
-	int provide_exif = FALSE;
 	_MMCamcorderSubContext *sc = NULL;
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 
@@ -941,8 +968,8 @@ int __mmcamcorder_capture_save_exifinfo(MMHandleType handle, MMCamcorderCaptureD
 		data = original->data;
 		datalen = original->length;
 	}
-	MMCAMCORDER_G_OBJECT_GET(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst, "provide-exif", &provide_exif);
-	if(provide_exif == 0){
+
+	if (provide_exif == FALSE) {
 		if (thumbnail) {
 			if (thumbnail->data && thumbnail->length > 0) {
 				_mmcam_dbg_log("thumbnail is added!thumbnail->data=%p thumbnail->width=%d ,thumbnail->height=%d",
@@ -977,14 +1004,15 @@ int __mmcamcorder_capture_save_exifinfo(MMHandleType handle, MMCamcorderCaptureD
 }
 
 
-void __mmcamcorder_get_capture_data_from_buffer(MMCamcorderCaptureDataType *capture_data, int pixtype, GstBuffer *buffer)
+void __mmcamcorder_get_capture_data_from_buffer(MMCamcorderCaptureDataType *capture_data, int pixtype, GstSample *sample)
 {
 	GstCaps *caps = NULL;
+	GstMapInfo mapinfo;
 	const GstStructure *structure;
 
-	mmf_return_if_fail(capture_data && buffer);
+	mmf_return_if_fail(capture_data && sample);
 
-	caps = gst_buffer_get_caps(buffer);
+	caps = gst_sample_get_caps(sample);
 	if (caps == NULL) {
 		_mmcam_dbg_err("failed to get caps");
 		goto GET_FAILED;
@@ -996,18 +1024,19 @@ void __mmcamcorder_get_capture_data_from_buffer(MMCamcorderCaptureDataType *capt
 		goto GET_FAILED;
 	}
 
-	capture_data->data = GST_BUFFER_DATA(buffer);
+	memset(&mapinfo, 0x0, sizeof(GstMapInfo));
+
+	gst_buffer_map(gst_sample_get_buffer(sample), &mapinfo, GST_MAP_READ);
+	capture_data->data = mapinfo.data;
 	capture_data->format = pixtype;
 	gst_structure_get_int(structure, "width", &capture_data->width);
 	gst_structure_get_int(structure, "height", &capture_data->height);
-	capture_data->length = GST_BUFFER_SIZE(buffer);
+	capture_data->length = mapinfo.size;
+	gst_buffer_unmap(gst_sample_get_buffer(sample), &mapinfo);
 
 	_mmcam_dbg_warn("buffer data[%p],size[%dx%d],length[%d],format[%d]",
-	                capture_data->data, capture_data->width, capture_data->height,
-	                capture_data->length, capture_data->format);
-	gst_caps_unref(caps);
-	caps = NULL;
-
+			capture_data->data, capture_data->width, capture_data->height,
+			capture_data->length, capture_data->format);
 	return;
 
 GET_FAILED:
@@ -1019,7 +1048,7 @@ GET_FAILED:
 }
 
 
-int __mmcamcorder_set_jpeg_data(MMHandleType handle, MMCamcorderCaptureDataType *dest, MMCamcorderCaptureDataType *thumbnail)
+int __mmcamcorder_set_jpeg_data(MMHandleType handle, MMCamcorderCaptureDataType *dest, MMCamcorderCaptureDataType *thumbnail, int provide_exif)
 {
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
@@ -1034,18 +1063,15 @@ int __mmcamcorder_set_jpeg_data(MMHandleType handle, MMCamcorderCaptureDataType 
 	/* if tag enable and doesn't provide exif, we make it */
 	_mmcam_dbg_log("Add exif information if existed(thumbnail[%p])", thumbnail);
 	if (thumbnail && thumbnail->data) {
-		return __mmcamcorder_capture_save_exifinfo(handle, dest, thumbnail);
+		return __mmcamcorder_capture_save_exifinfo(handle, dest, thumbnail, provide_exif);
 	} else {
-		return __mmcamcorder_capture_save_exifinfo(handle, dest, NULL);
+		return __mmcamcorder_capture_save_exifinfo(handle, dest, NULL, provide_exif);
 	}
 }
 
 
-void __mmcamcorder_release_jpeg_data(MMHandleType handle, MMCamcorderCaptureDataType *dest)
+void __mmcamcorder_release_jpeg_data(MMHandleType handle, MMCamcorderCaptureDataType *dest, int tag_enable, int provide_exif)
 {
-	int tag_enable = 0;
-	int provide_exif = FALSE;
-
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
 
@@ -1055,10 +1081,7 @@ void __mmcamcorder_release_jpeg_data(MMHandleType handle, MMCamcorderCaptureData
 	sc = MMF_CAMCORDER_SUBCONTEXT(hcamcorder);
 	mmf_return_if_fail(sc);
 
-	_mmcam_dbg_log("");
-
-	mm_camcorder_get_attributes(handle, NULL, MMCAM_TAG_ENABLE, &tag_enable, NULL);
-	MMCAMCORDER_G_OBJECT_GET(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst, "provide-exif", &provide_exif);
+	_mmcam_dbg_log("tag : %d, provide exif : %d", tag_enable, provide_exif);
 
 	/* if dest->data is allocated in MSL, release it */
 	if (tag_enable && !provide_exif) {
@@ -1076,7 +1099,7 @@ void __mmcamcorder_release_jpeg_data(MMHandleType handle, MMCamcorderCaptureData
 }
 
 
-static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffer1, GstBuffer *buffer2, GstBuffer *buffer3, gpointer u_data)
+static void __mmcamcorder_image_capture_cb(GstElement *element, GstSample *sample1, GstSample *sample2, GstSample *sample3, gpointer u_data)
 {
 	int ret = MM_ERROR_NONE;
 	int pixtype_main = MM_PIXEL_FORMAT_INVALID;
@@ -1102,10 +1125,13 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(u_data);
 	_MMCamcorderImageInfo *info = NULL;
 	_MMCamcorderSubContext *sc = NULL;
-	MMCamcorderCaptureDataType dest = {NULL, 0, 0, 0, 0, 0};
-	MMCamcorderCaptureDataType thumb = {NULL, 0, 0, 0, 0, 0};
-	MMCamcorderCaptureDataType scrnail = {NULL, 0, 0, 0, 0, 0};
-	MMCamcorderCaptureDataType encode_src = {NULL, 0, 0, 0, 0, 0};
+	MMCamcorderCaptureDataType dest = {0,};
+	MMCamcorderCaptureDataType thumb = {0,};
+	MMCamcorderCaptureDataType scrnail = {0,};
+	MMCamcorderCaptureDataType encode_src = {0,};
+	GstMapInfo mapinfo1;
+	GstMapInfo mapinfo2;
+	GstMapInfo mapinfo3;
 
 	mmf_attrs_t *attrs = NULL;
 	mmf_attribute_t *item_screennail = NULL;
@@ -1117,6 +1143,10 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 	mmf_return_if_fail(sc && sc->info_image);
 
 	info = sc->info_image;
+
+	memset(&mapinfo1, 0x0, sizeof(GstMapInfo));
+	memset(&mapinfo2, 0x0, sizeof(GstMapInfo));
+	memset(&mapinfo3, 0x0, sizeof(GstMapInfo));
 
 	/* get current state */
 	current_state = _mmcamcorder_get_state((MMHandleType)hcamcorder);
@@ -1133,14 +1163,14 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 		                stop_cont_shot, info->capturing);
 
 		/*free GstBuffer*/
-		if (buffer1) {
-			gst_buffer_unref(buffer1);
+		if (sample1) {
+			gst_sample_unref(sample1);
 		}
-		if (buffer2) {
-			gst_buffer_unref(buffer2);
+		if (sample2) {
+			gst_sample_unref(sample2);
 		}
-		if (buffer3) {
-			gst_buffer_unref(buffer3);
+		if (sample3) {
+			gst_sample_unref(sample3);
 		}
 
 		return;
@@ -1186,7 +1216,7 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 	memset((void *)&scrnail, 0x0, sizeof(MMCamcorderCaptureDataType));
 
 	/* Prepare main, thumbnail buffer */
-	pixtype_main = _mmcamcorder_get_pixel_format(buffer1);
+	pixtype_main = _mmcamcorder_get_pixel_format(gst_sample_get_caps(sample1));
 	if (pixtype_main == MM_PIXEL_FORMAT_INVALID) {
 		_mmcam_dbg_err("Unsupported pixel type");
 		MMCAM_SEND_MESSAGE(hcamcorder, MM_MESSAGE_CAMCORDER_ERROR, MM_ERROR_CAMCORDER_INTERNAL);
@@ -1194,12 +1224,25 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 	}
 
 	/* Main image buffer */
-	if (buffer1 && GST_BUFFER_DATA(buffer1) && (GST_BUFFER_SIZE(buffer1) !=0)) {
-		__mmcamcorder_get_capture_data_from_buffer(&dest, pixtype_main, buffer1);
-	} else {
-		_mmcam_dbg_err("buffer1 has wrong pointer. (buffer1=%p)",buffer1);
+	if (!sample1 || !gst_buffer_map(gst_sample_get_buffer(sample1), &mapinfo1, GST_MAP_READ)) {
+		_mmcam_dbg_err("sample1[%p] is NULL or gst_buffer_map failed", sample1);
 		MMCAM_SEND_MESSAGE(hcamcorder, MM_MESSAGE_CAMCORDER_ERROR, MM_ERROR_CAMCORDER_INTERNAL);
 		goto error;
+	}else{
+		if ( (mapinfo1.data == NULL) && (mapinfo1.size == 0) ){
+			_mmcam_dbg_err("mapinfo1 is wrong (%p, size %d)", mapinfo1.data, mapinfo1.size);
+			MMCAM_SEND_MESSAGE(hcamcorder, MM_MESSAGE_CAMCORDER_ERROR, MM_ERROR_CAMCORDER_INTERNAL);
+			gst_buffer_unmap(gst_sample_get_buffer(sample1), &mapinfo1);
+			goto error;
+		}else
+			__mmcamcorder_get_capture_data_from_buffer(&dest, pixtype_main, sample1);
+	}
+
+	if ( !sample2 || !gst_buffer_map(gst_sample_get_buffer(sample2), &mapinfo2, GST_MAP_READ) ) {
+		_mmcam_dbg_log("sample2[%p] is NULL or gst_buffer_map failed. Not Error.", sample2);
+	}
+	if ( !sample3 || !gst_buffer_map(gst_sample_get_buffer(sample3), &mapinfo3, GST_MAP_READ)) {
+		_mmcam_dbg_log("sample3[%p] is NULL or gst_buffer_map failed. Not Error.", sample3);
 	}
 
 	/* Screennail image buffer */
@@ -1207,17 +1250,17 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 	mm_attrs_get_index((MMHandleType)attrs, MMCAM_CAPTURED_SCREENNAIL, &attr_index);
 	item_screennail = &attrs->items[attr_index];
 
-	if (buffer3 && GST_BUFFER_DATA(buffer3) && GST_BUFFER_SIZE(buffer3) != 0) {
-		_mmcam_dbg_log("Screennail (buffer3=%p,size=%d)", buffer3, GST_BUFFER_SIZE(buffer3));
+	if (sample3 && mapinfo3.data && mapinfo3.size != 0) {
+		_mmcam_dbg_log("Screennail (sample3=%p,size=%d)", sample3, mapinfo3.size);
 
-		pixtype_scrnl = _mmcamcorder_get_pixel_format(buffer3);
-		__mmcamcorder_get_capture_data_from_buffer(&scrnail, pixtype_scrnl, buffer3);
+		pixtype_scrnl = _mmcamcorder_get_pixel_format(gst_sample_get_caps(sample3));
+		__mmcamcorder_get_capture_data_from_buffer(&scrnail, pixtype_scrnl, sample3);
 
 		/* Set screennail attribute for application */
 		ret = mmf_attribute_set_data(item_screennail, &scrnail, sizeof(scrnail));
 		_mmcam_dbg_log("Screennail set attribute data %p, size %d, ret %x", &scrnail, sizeof(scrnail), ret);
 	} else {
-		_mmcam_dbg_log("buffer3 has wrong pointer. Not Error. (buffer3=%p)",buffer3);
+		_mmcam_dbg_log("Sample3 has wrong pointer. Not Error. (sample3=%p)",sample3);
 		mmf_attribute_set_data(item_screennail, NULL, 0);
 	}
 
@@ -1231,12 +1274,12 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 	MMCAMCORDER_G_OBJECT_GET(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst, "provide-exif", &provide_exif);
 
 	/* Thumbnail image buffer */
-	if (buffer2 && GST_BUFFER_DATA(buffer2) && (GST_BUFFER_SIZE(buffer2) != 0)) {
-		_mmcam_dbg_log("Thumnail (buffer2=%p)",buffer2);
-		pixtype_thumb = _mmcamcorder_get_pixel_format(buffer2);
-		__mmcamcorder_get_capture_data_from_buffer(&thumb, pixtype_thumb, buffer2);
+	if (sample2 && mapinfo2.data && (mapinfo2.size != 0)) {
+		_mmcam_dbg_log("Thumbnail (buffer2=%p)",gst_sample_get_buffer(sample2));
+		pixtype_thumb = _mmcamcorder_get_pixel_format(gst_sample_get_caps(sample2));
+		__mmcamcorder_get_capture_data_from_buffer(&thumb, pixtype_thumb, sample2);
 	} else {
-		_mmcam_dbg_log("buffer2 has wrong pointer. Not Error. (buffer2 %p)", buffer2);
+		_mmcam_dbg_log("Sample2 has wrong pointer. Not Error. (sample2 %p)", sample2);
 
 		if (pixtype_main == MM_PIXEL_FORMAT_ENCODED && provide_exif) {
 			ExifLoader *l;
@@ -1357,7 +1400,7 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 			if (thumb_raw_data) {
 				ret = _mmcamcorder_encode_jpeg(thumb_raw_data, thumb_width, thumb_height,
 				                               encode_src.format, thumb_length, THUMBNAIL_JPEG_QUALITY,
-				                               (void **)&internal_thumb_data, &internal_thumb_length, JPEG_ENCODER_SOFTWARE);
+				                               (void **)&internal_thumb_data, &internal_thumb_length);
 				if (ret) {
 					_mmcam_dbg_log("encode THUMBNAIL done - data %p, length %d",
 					               internal_thumb_data, internal_thumb_length);
@@ -1393,9 +1436,9 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 		                            NULL);
 		_mmcam_dbg_log("Start Internal Encode - capture_quality %d", capture_quality);
 
-		ret = _mmcamcorder_encode_jpeg(GST_BUFFER_DATA(buffer1), dest.width, dest.height,
+		ret = _mmcamcorder_encode_jpeg(mapinfo1.data, dest.width, dest.height,
 		                               pixtype_main, dest.length, capture_quality,
-		                               (void **)&internal_main_data, &internal_main_length, JPEG_ENCODER_HARDWARE);
+		                               (void **)&internal_main_data, &internal_main_length);
 		if (!ret) {
 			_mmcam_dbg_err("_mmcamcorder_encode_jpeg failed");
 
@@ -1478,7 +1521,7 @@ static void __mmcamcorder_image_capture_cb(GstElement *element, GstBuffer *buffe
 			case MM_IMAGE_CODEC_JPEG:
 			case MM_IMAGE_CODEC_SRW:
 			case MM_IMAGE_CODEC_JPEG_SRW:
-				ret = __mmcamcorder_set_jpeg_data((MMHandleType)hcamcorder, &dest, &thumb);
+				ret = __mmcamcorder_set_jpeg_data((MMHandleType)hcamcorder, &dest, &thumb, provide_exif);
 				if (ret != MM_ERROR_NONE) {
 					_mmcam_dbg_err("Error on setting extra data to jpeg");
 					MMCAM_SEND_MESSAGE(hcamcorder, MM_MESSAGE_CAMCORDER_ERROR, ret);
@@ -1532,7 +1575,7 @@ err_release_exif:
 
 	/* Release jpeg data */
 	if (pixtype_main == MM_PIXEL_FORMAT_ENCODED) {
-		__mmcamcorder_release_jpeg_data((MMHandleType)hcamcorder, &dest);
+		__mmcamcorder_release_jpeg_data((MMHandleType)hcamcorder, &dest, tag_enable, provide_exif);
 	}
 
 error:
@@ -1546,7 +1589,7 @@ error:
 	if (sc->internal_encode) {
 		compare_data = internal_main_data;
 	} else {
-		compare_data = GST_BUFFER_DATA(buffer1);
+		compare_data = mapinfo1.data;
 	}
 	if (dest.data && compare_data &&
 	    dest.data != compare_data) {
@@ -1570,14 +1613,17 @@ error:
 	compare_data = NULL;
 
 	/*free GstBuffer*/
-	if (buffer1) {
-		gst_buffer_unref(buffer1);
+	if (sample1) {
+		gst_buffer_unmap(gst_sample_get_buffer(sample1), &mapinfo1);
+		gst_sample_unref(sample1);
 	}
-	if (buffer2) {
-		gst_buffer_unref(buffer2);
+	if (sample2) {
+		gst_buffer_unmap(gst_sample_get_buffer(sample2), &mapinfo2);
+		gst_sample_unref(sample2);
 	}
-	if (buffer3) {
-		gst_buffer_unref(buffer3);
+	if (sample3) {
+		gst_buffer_unmap(gst_sample_get_buffer(sample3), &mapinfo3);
+		gst_sample_unref(sample3);
 	}
 
 	/* destroy exif info */
@@ -1599,9 +1645,22 @@ error:
 		}
 	}
 
-	/* Handle capture in recording case */
-	if (hcamcorder->capture_in_recording) {
+	if (current_state >= MM_CAMCORDER_STATE_RECORDING) {
+		/* Handle capture in recording case */
 		hcamcorder->capture_in_recording = FALSE;
+
+		pthread_mutex_lock(&(hcamcorder->task_thread_lock));
+
+		if (hcamcorder->task_thread_state == _MMCAMCORDER_TASK_THREAD_STATE_CHECK_CAPTURE_IN_RECORDING) {
+			_mmcam_dbg_log("send signal for capture in recording");
+			pthread_cond_signal(&(hcamcorder->task_thread_cond));
+		} else {
+			_mmcam_dbg_warn("unexpected task thread state : %d", hcamcorder->task_thread_state);
+		}
+
+		pthread_mutex_unlock(&(hcamcorder->task_thread_lock));
+
+		_MMCAMCORDER_CMD_SIGNAL(hcamcorder);
 	}
 
 	_mmcam_dbg_err("END");
@@ -1610,7 +1669,7 @@ error:
 }
 
 
-static gboolean __mmcamcorder_encodesink_handoff_callback(GstElement *fakesink, GstBuffer *buffer, GstPad *pad, gpointer u_data)
+gboolean __mmcamcorder_handoff_callback(GstElement *fakesink, GstBuffer *buffer, GstPad *pad, gpointer u_data)
 {
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(u_data);
 	_MMCamcorderSubContext *sc = NULL;
@@ -1623,7 +1682,7 @@ static gboolean __mmcamcorder_encodesink_handoff_callback(GstElement *fakesink, 
 	_mmcam_dbg_log("");
 
 	/* FIXME. How could you get a thumbnail? */
-	__mmcamcorder_image_capture_cb(fakesink, buffer, NULL, NULL, u_data);
+	__mmcamcorder_image_capture_cb(fakesink, gst_sample_new(buffer, gst_pad_get_current_caps(pad), NULL, NULL), NULL, NULL, u_data);
 
 	if (sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst) {
 		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_SINK].gst, "signal-handoffs", FALSE);
@@ -1673,8 +1732,7 @@ static ExifData *__mmcamcorder_update_exif_make(MMHandleType handle, ExifData *e
 			EXIF_SET_ERR(ret, EXIF_TAG_MAKE);
 		}
 	} else {
-		ret = MM_ERROR_CAMCORDER_LOW_MEMORY;
-		EXIF_SET_ERR(ret, EXIF_TAG_MAKE);
+		_mmcam_dbg_err("low memory maker is null");
 	}
 
 exit:
@@ -2058,8 +2116,8 @@ int __mmcamcorder_set_exif_basic_info(MMHandleType handle, int image_width, int 
 
 	/* get ExifData from exif info */
 	ed = mm_exif_get_exif_from_info(hcamcorder->exif_info);
-	if (ed == NULL || ed->ifd == NULL) {
-		_mmcam_dbg_err("get exif data error!!(%p, %p)", ed, (ed ? ed->ifd : NULL));
+	if (ed == NULL) {
+		_mmcam_dbg_err("exif data is null from exif_info");
 		return MM_ERROR_INVALID_HANDLE;
 	}
 
@@ -2804,25 +2862,6 @@ static void __sound_status_changed_cb(keynode_t* node, void *data)
 	vconf_get_bool(VCONFKEY_SETAPPL_SOUND_STATUS_BOOL, &(info->sound_status));
 
 	_mmcam_dbg_log("DONE : sound status %d", info->sound_status);
-
-	return;
-}
-
-
-static void __volume_level_changed_cb(void *data)
-{
-	mmf_camcorder_t *hcamcorder = (mmf_camcorder_t *)data;
-	_MMCamcorderImageInfo *info = NULL;
-
-	mmf_return_if_fail(hcamcorder && hcamcorder->sub_context && hcamcorder->sub_context->info_image);
-
-	_mmcam_dbg_log("START");
-
-	info = hcamcorder->sub_context->info_image;
-
-	mm_sound_volume_get_value(VOLUME_TYPE_SYSTEM, &info->volume_level);
-
-	_mmcam_dbg_log("DONE : volume level %d", info->volume_level);
 
 	return;
 }

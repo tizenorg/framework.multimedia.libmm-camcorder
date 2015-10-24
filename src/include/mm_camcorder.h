@@ -727,7 +727,7 @@ extern "C" {
 
 /**
  * Frames per second. This is an integer field
- * 
+ *
  */
 #define MMCAM_CAMERA_FPS                        "camera-fps"
 
@@ -755,6 +755,16 @@ extern "C" {
  * Digital zoom level.
  */
 #define MMCAM_CAMERA_DIGITAL_ZOOM               "camera-digital-zoom"
+
+/**
+ * Digital pan level.
+ */
+#define MMCAM_CAMERA_PAN               "camera-pan"
+
+/**
+ * Digital tilt level.
+ */
+#define MMCAM_CAMERA_TILT               "camera-tilt"
 
 /**
  * Optical zoom level.
@@ -1228,10 +1238,29 @@ extern "C" {
 #define MMCAM_SUPPORT_MEDIA_PACKET_PREVIEW_CB   "support-media-packet-preview-cb"
 
 /**
+ * Display scaler
+ */
+#define MMCAM_DISPLAY_SCALER                    "display-scaler"
+
+/**
+ * Bitrate for encoded preview stream
+ */
+#define MMCAM_ENCODED_PREVIEW_BITRATE           "encoded-preview-bitrate"
+
+/**
+ * I-frame interval for encoded preview stream
+ */
+#define MMCAM_ENCODED_PREVIEW_IFRAME_INTERVAL   "encoded-preview-iframe-interval"
+
+/**
+ * Name of usb audio device id
+ */
+#define MMCAM_USB_AUDIO_UDEV_ID                 "usb-audio-device-id"
+
+/**
  * Enable to write tags for recorded file
  */
 #define MMCAM_RECORDER_TAG_ENABLE               "recorder-tag-enable"
-
 
 /*=======================================================================================
 | ENUM DEFINITIONS									|
@@ -1317,10 +1346,10 @@ enum MMCamcorderColorToneType {
 
 /**
  * An enumeration for white balance. White Balance is the control that adjusts
- * the camcorder's color sensitivity to match the prevailing color of white 
- * outdoor light, yellower indoor light, or (sometimes) greenish fluorescent 
- * light. White balance may be set either automatically or manually. White balance 
- * may be set "incorrectly" on purpose to achieve special effects. 
+ * the camcorder's color sensitivity to match the prevailing color of white
+ * outdoor light, yellower indoor light, or (sometimes) greenish fluorescent
+ * light. White balance may be set either automatically or manually. White balance
+ * may be set "incorrectly" on purpose to achieve special effects.
  */
 enum MMCamcorderWhiteBalanceType {
 	MM_CAMCORDER_WHITE_BALANCE_NONE = 0,		/**< None */
@@ -1333,13 +1362,12 @@ enum MMCamcorderWhiteBalanceType {
 	MM_CAMCORDER_WHITE_BALANCE_HORIZON,		/**< Horizon */
 	MM_CAMCORDER_WHITE_BALANCE_FLASH,		/**< Flash */
 	MM_CAMCORDER_WHITE_BALANCE_CUSTOM,		/**< Custom */
-	
 };
 
 
 /**
  * An enumeration for scene mode. Scene mode gives the environment condition
- * for operating camcorder. The mode of operation can be in daylight, night and 
+ * for operating camcorder. The mode of operation can be in daylight, night and
  * backlight. It can be an automatic setting also.
  */
 enum MMCamcorderSceneModeType {
@@ -1367,8 +1395,8 @@ enum MMCamcorderSceneModeType {
  */
 enum MMCamcorderFocusMode {
 	MM_CAMCORDER_FOCUS_MODE_NONE = 0,	/**< Focus mode is None */
-	MM_CAMCORDER_FOCUS_MODE_PAN,		/**< Pan focus mode*/	
-	MM_CAMCORDER_FOCUS_MODE_AUTO,		/**< Autofocus mode*/	
+	MM_CAMCORDER_FOCUS_MODE_PAN,		/**< Pan focus mode*/
+	MM_CAMCORDER_FOCUS_MODE_AUTO,		/**< Autofocus mode*/
 	MM_CAMCORDER_FOCUS_MODE_MANUAL,		/**< Manual focus mode*/
 	MM_CAMCORDER_FOCUS_MODE_TOUCH_AUTO,	/**< Touch Autofocus mode*/
 	MM_CAMCORDER_FOCUS_MODE_CONTINUOUS,	/**< Continuous Autofocus mode*/
@@ -1607,6 +1635,7 @@ typedef enum {
 	MM_CAM_STREAM_DATA_YUV420SP,            /**< YUV420 SemiPlannar type - 2 planes */
 	MM_CAM_STREAM_DATA_YUV420P,             /**< YUV420 Plannar type - 3 planes */
 	MM_CAM_STREAM_DATA_YUV422P,             /**< YUV422 Plannar type - 3 planes */
+	MM_CAM_STREAM_DATA_ENCODED              /**< Encoded data type - 1 plane */
 } MMCamStreamData;
 
 
@@ -1705,6 +1734,10 @@ typedef struct {
 			unsigned char *v;
 			unsigned int length_v;
 		} yuv420p, yuv422p;
+		struct {
+			unsigned char *data;
+			unsigned int length_data;
+		} encoded;
 	} data;                         /**< pointer of captured stream */
 	MMCamStreamData data_type;      /**< data type */
 	unsigned int length_total;      /**< total length of stream buffer (in byte)*/
@@ -3048,6 +3081,48 @@ gboolean getting_info_from_attribute()
  *	@endcode
  */
 int mm_camcorder_get_attribute_info(MMHandleType camcorder, const char *attribute_name, MMCamAttrsInfo *info);
+
+
+/**
+ *    mm_camcorder_get_fps_list_by_resolution:\n
+ *  Get detail information of the fps configure. To manager fps, an user may want to know the supported fps list by the current preview resolution,
+ *  Gives attribute information structure, from the configure data.
+ *  Depending on the 'validity_type', validity union would be different. To know about the type of union, please refer 'MMCamAttrsInfo'.
+ *
+ *	@param[in]	camcorder	Specifies the camcorder  handle.
+ *	@param[in]	width	width value of the current Preview resolution.
+ *	@param[in]	height	height value of the current Preview resolution.
+ *	@param[out]	fps_info		a structure that holds information related with the attribute.
+ *	@return		This function returns zero(MM_ERROR_NONE) on success, or negative value with error code.\n
+ *			Please refer 'mm_error.h' to know the exact meaning of the error.
+ *	@pre		None
+ *	@post		None
+ *	@remarks	If the function succeeds, 'info' holds detail information about the attribute, such as type,
+ *			flag, validity_type, validity_values, and default values.
+ *	@see		mm_camcorder_get_attributes, mm_camcorder_set_attributes
+ *	@par example
+ *	@code
+
+#include <mm_camcorder.h>
+
+gboolean getting_info_from_attribute()
+{
+	MMCamAttrsInfo info;
+	int err;
+
+	err = mm_camcorder_get_fps_list_by_resolution(handle, width, height, &info);
+	if (err < 0) {
+		printf("Fail to call mm_camcorder_get_attribute_info()");
+		return FALSE;
+	}
+
+	//Now 'info' has many information about 'MMCAM_CAPTURE_HEIGHT'
+
+	return TRUE;
+}
+ *	@endcode
+ */
+int mm_camcorder_get_fps_list_by_resolution(MMHandleType camcorder, int width, int height, MMCamAttrsInfo *fps_info);
 
 
 /**

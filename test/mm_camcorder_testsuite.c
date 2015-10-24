@@ -29,6 +29,7 @@ when		who						what, where, why
 10/10/07	wh01.cho@samsung.com   		Created
 12/30/08	jh1979.park@samsung.com		Modified
 08/31/11	sc11.lee@samsung.com		Modified (Reorganized for easy look)
+10/23/14	p.gamov@samsung.com			Upgraded to Gstreamer 1.0
 */
 
 
@@ -43,7 +44,7 @@ when		who						what, where, why
 #include "../src/include/mm_camcorder.h"
 #include "../src/include/mm_camcorder_internal.h"
 #include "../src/include/mm_camcorder_util.h"
-#include <gst/interfaces/colorbalance.h>
+#include <gst/video/colorbalance.h>
 
 /*-----------------------------------------------------------------------
 |    GLOBAL VARIABLE DEFINITIONS:                                       |
@@ -154,7 +155,7 @@ static GTimer *timer = NULL;
 #define IMAGE_CAPTURE_THUMBNAIL_PATH    TARGET_FILENAME_PATH"thumbnail.jpg"
 #define IMAGE_CAPTURE_SCREENNAIL_PATH   TARGET_FILENAME_PATH"screennail.yuv"
 #define IMAGE_CAPTURE_EXIF_PATH         TARGET_FILENAME_PATH"exif.raw"
-#define TARGET_FILENAME_VIDEO           TARGET_FILENAME_PATH"test_rec_video.3gp"
+#define TARGET_FILENAME_VIDEO           TARGET_FILENAME_PATH"test_rec_video.mp4"
 #define TARGET_FILENAME_AUDIO           TARGET_FILENAME_PATH"test_rec_audio.m4a"
 #define CAPTURE_FILENAME_LEN            256
 
@@ -631,7 +632,7 @@ camcordertest_video_capture_cb(MMCamcorderCaptureDataType *main, MMCamcorderCapt
 		void *dst = NULL;
 
 		nret = _mmcamcorder_encode_jpeg(main->data, main->width, main->height, main->format,
-		                                main->length, 90, &dst, &dst_size, 0);
+		                                main->length, 90, &dst, &dst_size);
 		if (nret) {
 			_file_write(m_filename, dst, dst_size);
 		} else {
@@ -803,7 +804,7 @@ int camcordertest_get_attr_valid_intrange(const char * attr_name, int *min, int 
 
 			err = mm_camcorder_get_attribute_info(hcamcorder->camcorder, attr_name, &info);
 			if (err != MM_ERROR_NONE) {
-				err_msg_t("camcordertest_get_attr_valid_intarray : Error(%x)!!",  err);
+				err_msg_t("camcordertest_get_attr_valid_intrange : Error(%x)!!",  err);
 				return FALSE;
 			} else {
 				if (info.type == MM_CAM_ATTRS_TYPE_INT) {
@@ -815,17 +816,17 @@ int camcordertest_get_attr_valid_intrange(const char * attr_name, int *min, int 
 					}
 				}
 
-				err_msg_t("camcordertest_get_attr_valid_intarray : Type mismatched!!");
+				err_msg_t("camcordertest_get_attr_valid_intrange : Type mismatched!!");
 				return FALSE;
 			}
 			//success
 
 		}
 
-		debug_msg_t("camcordertest_get_attr_valid_intarray(!hcamcorder->camcorde)");
+		debug_msg_t("camcordertest_get_attr_valid_intrange(!hcamcorder->camcorde)");
 	}
 
-	debug_msg_t("camcordertest_get_attr_valid_intarray(!hcamcorder)");
+	debug_msg_t("camcordertest_get_attr_valid_intrange(!hcamcorder)");
 	return FALSE;
 }
 
@@ -933,6 +934,8 @@ static void print_menu()
 			g_print("\t     'u' Touch AF area \n");
 			g_print("\t     'm' Stream callback function \n");
 			g_print("\t     'M' Camcorder Motion Rate setting \n");
+			g_print("\t     'B' Encoded preview bitrate \n");
+			g_print("\t     'I' Encoded preview I-frame interval \n");
 			g_print("\t     'b' back\n");
 			g_print("\t=======================================\n");
 			break;
@@ -989,6 +992,7 @@ static void main_menu(gchar buf)
 					g_print("*Recording start!\n");
 					video_stream_cb_cnt = 0;
 					audio_stream_cb_cnt = 0;
+					hcamcorder->elapsed_time = 0;
 
 					g_timer_reset(timer);
 					err = mm_camcorder_record(hcamcorder->camcorder);
@@ -1082,6 +1086,7 @@ static void main_menu(gchar buf)
 			switch(buf) {
 				case '1' : //  Start Recording
 					g_print("*Recording start!\n");
+					hcamcorder->elapsed_time = 0;
 					g_timer_reset(timer);
 					err = mm_camcorder_record(hcamcorder->camcorder);
 
@@ -1223,13 +1228,14 @@ static void setting_menu(gchar buf)
 					g_print("MMCAM_RECOMMEND_CAMERA_WIDTH/HEIGHT Not supported!!\n");
 				} else {
 					g_print("\n - MMCAM_RECOMMEND_CAMERA_WIDTH and HEIGHT (count %d) -\n", width_count);
-					g_print("\t NORMAL ratio : %dx%d\n",
-					        width_array[MM_CAMCORDER_PREVIEW_TYPE_NORMAL], height_array[MM_CAMCORDER_PREVIEW_TYPE_NORMAL]);
-					if (width_count >= 2) {
-						g_print("\t WIDE ratio   : %dx%d\n\n",
-						        width_array[MM_CAMCORDER_PREVIEW_TYPE_WIDE], height_array[MM_CAMCORDER_PREVIEW_TYPE_WIDE]);
-					} else {
-						g_print("\t There is ONLY NORMAL resolution\n\n");
+					if (width_count > 0) {
+						g_print("\t NORMAL ratio : %dx%d\n", width_array[MM_CAMCORDER_PREVIEW_TYPE_NORMAL], height_array[MM_CAMCORDER_PREVIEW_TYPE_NORMAL]);
+					}
+					if (width_count > 1) {
+						g_print("\t WIDE ratio : %dx%d\n", width_array[MM_CAMCORDER_PREVIEW_TYPE_WIDE], height_array[MM_CAMCORDER_PREVIEW_TYPE_WIDE]);
+					}
+					if (width_count > 2) {
+						g_print("\t SQUARE ratio : %dx%d\n", width_array[MM_CAMCORDER_PREVIEW_TYPE_SQUARE], height_array[MM_CAMCORDER_PREVIEW_TYPE_SQUARE]);
 					}
 				}
 
@@ -1422,14 +1428,14 @@ static void setting_menu(gchar buf)
 
 			case 'r' : // Setting > Rotate camera input when recording
 				g_print("*Rotate camera input\n");
-				camcordertest_get_attr_valid_intrange(MMCAM_CAMERA_ROTATION, &min, &max);
+				camcordertest_get_attr_valid_intarray(MMCAM_CAMERA_ROTATION, &array, &count);
 
-				if(min >= max) {
+				if(count <= 0) {
 					g_print("Not supported !! \n");
 				} else {
 					flush_stdin();
-					for (i = min ; i <= max ; i++) {
-						g_print("\t %d. %s\n", i, camera_rotation[i]);
+					for ( i = 0; i < count; i++) {
+						g_print("\t %d. %s\n", array[i], camera_rotation[array[i]]);
 					}
 					err = scanf("%d",&idx);
 					CHECK_MM_ERROR(mm_camcorder_stop(hcamcorder->camcorder));
@@ -1983,6 +1989,52 @@ static void setting_menu(gchar buf)
 			}
 				break;
 
+			case 'B':
+			{
+				int bitrate = 0;
+
+				flush_stdin();
+
+				g_print("*Encoded preview Bitrate (bps, should be bigger than zero)\n");
+
+				err = scanf("%d", &bitrate);
+
+				err = mm_camcorder_set_attributes(hcamcorder->camcorder, &err_attr_name,
+				                                  MMCAM_ENCODED_PREVIEW_BITRATE, bitrate,
+				                                  NULL);
+				if (err != MM_ERROR_NONE) {
+					g_print("Failed to set Encoded preview Bitrate %d [err:0x%x]\n", bitrate, err);
+					free( err_attr_name );
+					err_attr_name = NULL;
+				} else {
+					g_print("Succeed to set Encoded preview Bitrate %d\n", bitrate);
+				}
+			}
+				break;
+
+			case 'I':
+			{
+				int interval = 0;
+
+				flush_stdin();
+
+				g_print("*Encoded preview I-frame interval (ms, should be bigger than zero)\n");
+
+				err = scanf("%d", &interval);
+
+				err = mm_camcorder_set_attributes(hcamcorder->camcorder, &err_attr_name,
+				                                  MMCAM_ENCODED_PREVIEW_IFRAME_INTERVAL, interval,
+				                                  NULL);
+				if (err != MM_ERROR_NONE) {
+					g_print("Failed to set Encoded preview I-frame interval %d [err:0x%x]\n", interval, err);
+					free( err_attr_name );
+					err_attr_name = NULL;
+				} else {
+					g_print("Succeed to set Encoded preview I-frame interval %d\n", interval);
+				}
+			}
+				break;
+
 			case 'b' : // back
 				hcamcorder->menu_state = MENU_STATE_MAIN;
 				break;
@@ -2099,6 +2151,7 @@ static gboolean init(int type)
 	int preview_format = MM_PIXEL_FORMAT_NV12;
 	int support_zero_copy_format = 0;
 	int support_media_packet_preview_cb = 0;
+	int recommend_display_rotation = 0;
 	MMHandleType cam_handle = 0;
 
 	char *err_attr_name = NULL;
@@ -2119,10 +2172,12 @@ static gboolean init(int type)
 		                            MMCAM_RECOMMEND_PREVIEW_FORMAT_FOR_CAPTURE, &preview_format,
 		                            MMCAM_SUPPORT_ZERO_COPY_FORMAT, &support_zero_copy_format,
 		                            MMCAM_SUPPORT_MEDIA_PACKET_PREVIEW_CB, &support_media_packet_preview_cb,
+		                            MMCAM_RECOMMEND_DISPLAY_ROTATION, &recommend_display_rotation,
 		                            NULL);
 
 		warn_msg_t("MMCAM_SUPPORT_ZERO_COPY_FORMAT %d", support_zero_copy_format);
 		warn_msg_t("MMCAM_SUPPORT_MEDIA_PACKET_PREVIEW_CB %d", support_media_packet_preview_cb);
+		warn_msg_t("MMCAM_RECOMMEND_DISPLAY_ROTATION %d", recommend_display_rotation);
 
 		/* camcorder attribute setting */
 		err = mm_camcorder_set_attributes( (MMHandleType)cam_handle, &err_attr_name,
@@ -2155,7 +2210,7 @@ static gboolean init(int type)
 		                                   MMCAM_AUDIO_ENCODER, MM_AUDIO_CODEC_AAC,
 		                                   MMCAM_VIDEO_ENCODER, MM_VIDEO_CODEC_MPEG4,
 		                                   MMCAM_VIDEO_ENCODER_BITRATE, VIDEO_ENCODE_BITRATE,
-		                                   MMCAM_FILE_FORMAT, MM_FILE_FORMAT_3GP,
+		                                   MMCAM_FILE_FORMAT, MM_FILE_FORMAT_MP4,
 		                                   //MMCAM_CAMERA_FPS, SRC_VIDEO_FRAME_RATE_30,
 		                                   MMCAM_CAMERA_FPS_AUTO, 0,
 		                                   MMCAM_CAMERA_ROTATION, MM_VIDEO_INPUT_ROTATION_NONE,
@@ -2166,6 +2221,9 @@ static gboolean init(int type)
 		                                   MMCAM_TARGET_FILENAME, TARGET_FILENAME_VIDEO, strlen(TARGET_FILENAME_VIDEO),
 		                                   //MMCAM_TARGET_TIME_LIMIT, 360000,
 		                                   //MMCAM_TARGET_MAX_SIZE, 102400,
+		                                   MMCAM_RECORDER_TAG_ENABLE, 1,
+		                                   MMCAM_TAG_VIDEO_ORIENTATION, 1,
+		                                   MMCAM_DISPLAY_ROTATION, recommend_display_rotation,
 		                                   NULL );
 
 		if (err != MM_ERROR_NONE) {
@@ -2194,11 +2252,7 @@ static gboolean init(int type)
 		                                   MMCAM_AUDIO_CHANNEL, AUDIO_SOURCE_CHANNEL_AAC,
 		                                   MMCAM_TARGET_FILENAME, TARGET_FILENAME_AUDIO, size,
 		                                   MMCAM_TARGET_TIME_LIMIT, 360000,
-		                                   //MMCAM_AUDIO_ENCODER_BITRATE, 12200,
-		                                   MMCAM_TAG_GPS_ENABLE, TRUE,
-		                                   MMCAM_TAG_LATITUDE, 35.3036944,
-		                                   MMCAM_TAG_LONGITUDE, 176.67837,
-		                                   MMCAM_TAG_ALTITUDE, 190.3455,
+		                                   MMCAM_AUDIO_ENCODER_BITRATE, 128000,
 		                                   MMCAM_TARGET_MAX_SIZE, 300,
 		                                   NULL);
 
@@ -2307,9 +2361,6 @@ static gboolean msg_callback(int message, void *msg_param, void *user_param)
 				g_print("*******************************************************\n");
 				g_print("[Camcorder Testsuite] Camcorder Captured(filename=%s)\n", report->recording_filename);
 				g_print("*******************************************************\n");
-
-				SAFE_FREE (report->recording_filename);
-				SAFE_FREE (report);
 			} else {
 				g_print( "[Camcorder Testsuite] report is NULL.\n" );
 			}
@@ -2633,8 +2684,10 @@ int main(int argc, char **argv)
 {
 	int bret;
 
+#if !GLIB_CHECK_VERSION(2,35,0)
 	if (!g_thread_supported())
 		g_thread_init (NULL);
+#endif
 
 	timer = g_timer_new();
 

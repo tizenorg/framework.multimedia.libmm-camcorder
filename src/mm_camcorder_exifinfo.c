@@ -110,28 +110,28 @@ _exif_get_jpeg_marker_offset (void *jpeg, int jpeg_size, unsigned short marker)
 
 	_mmcam_dbg_log("marker: 0x%02X 0x%02X", m[0], m[1]);
 
-	if (*src == 0xff && *(src + 1) == 0xd8) 
+	if (*src == 0xff && *(src + 1) == 0xd8)
 	{
 		p = src + 2; /* SOI(start of image) */
-	} 
-	else 
+	}
+	else
 	{
 		_mmcam_dbg_log("invalid JPEG file.");
 		return 0UL;
 	}
 
-	for (i = 0; i < src_sz - (1 + 2); i++, p++) 
+	for (i = 0; i < src_sz - (1 + 2); i++, p++)
 	{
-		if (*p == 0xff) 
+		if (*p == 0xff)
 		{
 			/*marker is 0xFFxx*/
-			if (*(p + 1) == m[1]) 
+			if (*(p + 1) == m[1])
 			{
 				ret = p - src;
 				_mmcam_dbg_log("marker offset: %lu %p %p.",ret, (p+1), src);
 				return ret;
 			}
-		} 
+		}
 	}
 	_mmcam_dbg_log("Marker not found.");
 	return 0UL;
@@ -162,7 +162,7 @@ mm_exif_get_exif_from_info (mm_exif_info_t *info)
 
 	unsigned char	size[2];
 	unsigned int	i;
-	
+
 	/*get ExifData from info*/
 	loader = exif_loader_new ();
 
@@ -194,9 +194,9 @@ mm_exif_set_exif_to_info (mm_exif_info_t *info, ExifData *exif)
 
 	if(info->data)
 	{
-		free (info->data); 
-		info->data = NULL; 
-		info->size = 0; 
+		free (info->data);
+		info->data = NULL;
+		info->size = 0;
 	}
 
 	exif_data_save_data (exif, &eb, &ebs);
@@ -339,13 +339,13 @@ mm_exif_destory_exif_info (mm_exif_info_t *info)
 
 #if MM_EXIFINFO_USE_BINARY_EXIFDATA
 	if (info) {
-		if (info->data) 
+		if (info->data)
 			free (info->data);
 		free (info);
 	}
 #else
 	if (info) {
-		if (info->data) 
+		if (info->data)
 			exif_mem_free (info->data);
 		free (info);
 	}
@@ -413,7 +413,7 @@ mm_exif_add_thumbnail_info (mm_exif_info_t *info, void *thumbnail, int width, in
 
 	ed->data = NULL;
 	ed->size = 0;
-	exif_data_unref (ed);	
+	exif_data_unref (ed);
 
 exit :
 	if(p_compressed != NULL)
@@ -492,7 +492,7 @@ mm_exif_write_exif_jpeg_to_memory (void **mem, unsigned int *length, mm_exif_inf
 	if(jpeg_len>JPEG_MAX_SIZE)
 	{
 		_mmcam_dbg_err( "jpeg_len is worng jpeg_len=%d",jpeg_len);
-		return MM_ERROR_CAMCORDER_DEVICE_WRONG_JPEG;	
+		return MM_ERROR_CAMCORDER_DEVICE_WRONG_JPEG;
 	}
 
 	eb = info->data;
@@ -522,7 +522,7 @@ mm_exif_write_exif_jpeg_to_memory (void **mem, unsigned int *length, mm_exif_inf
 	m = malloc (m_len);
 	if (!m) {
 		_mmcam_dbg_err( "malloc() failed.");
-		return MM_ERROR_CAMCORDER_LOW_MEMORY;	
+		return MM_ERROR_CAMCORDER_LOW_MEMORY;
 	}
 
 	/*set SOI, APP1*/

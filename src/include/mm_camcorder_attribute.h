@@ -25,6 +25,7 @@
 /*=======================================================================================
 | INCLUDE FILES										|
 ========================================================================================*/
+#include <gst/gst.h>
 #include <mm_types.h>
 #include <stdarg.h>
 
@@ -165,12 +166,18 @@ typedef enum
 	MM_CAM_DISPLAY_FLIP,
 	MM_CAM_CAMERA_VIDEO_STABILIZATION,
 	MM_CAM_TAG_VIDEO_ORIENTATION,
-	MM_CAM_VIDEO_WIDTH,			/* 110 */
+	MM_CAM_CAMERA_PAN,				/* 110 */
+	MM_CAM_CAMERA_TILT,
+	MM_CAM_VIDEO_WIDTH,
 	MM_CAM_VIDEO_HEIGHT,
 	MM_CAM_SUPPORT_ZSL_CAPTURE,
 	MM_CAM_DISPLAY_HANDLE_USER_DATA,
 	MM_CAM_SUPPORT_ZERO_COPY_FORMAT,
 	MM_CAM_SUPPORT_MEDIA_PACKET_PREVIEW_CB,
+	MM_CAM_DISPLAY_SCALER,
+	MM_CAM_ENCODED_PREVIEW_BITRATE,
+	MM_CAM_ENCODED_PREVIEW_IFRAME_INTERVAL,			/* 120 */
+	MM_CAM_USB_AUDIO_UDEV_ID,
 	MM_CAM_RECORDER_TAG_ENABLE,
 	MM_CAM_NUM
 }MMCamcorderAttrsID;
@@ -350,10 +357,15 @@ bool _mmcamcorder_commit_display_geometry_method(MMHandleType handle, int attr_i
 bool _mmcamcorder_commit_display_rect(MMHandleType handle, int attr_idx, const mmf_value_t *value);
 bool _mmcamcorder_commit_display_scale(MMHandleType handle, int attr_idx, const mmf_value_t *value);
 bool _mmcamcorder_commit_display_evas_do_scaling(MMHandleType handle, int attr_idx, const mmf_value_t *value);
+bool _mmcamcorder_commit_display_scaler(MMHandleType handle, int attr_idx, const mmf_value_t *value);
 bool _mmcamcorder_commit_strobe(MMHandleType handle, int attr_idx, const mmf_value_t *value);
 bool _mmcamcorder_commit_detect(MMHandleType handle, int attr_idx, const mmf_value_t *value);
 bool _mmcamcorder_commit_camera_flip(MMHandleType handle, int attr_idx, const mmf_value_t *value);
 bool _mmcamcorder_commit_camera_hdr_capture(MMHandleType handle, int attr_idx, const mmf_value_t *value);
+bool _mmcamcorder_commit_camera_pan(MMHandleType handle, int attr_idx, const mmf_value_t *value);
+bool _mmcamcorder_commit_camera_tilt(MMHandleType handle, int attr_idx, const mmf_value_t *value);
+bool _mmcamcorder_commit_encoded_preview_bitrate(MMHandleType handle, int attr_idx, const mmf_value_t *value);
+bool _mmcamcorder_commit_encoded_preview_iframe_interval(MMHandleType handle, int attr_idx, const mmf_value_t *value);
 
 /**
  * This function initialize effect setting.

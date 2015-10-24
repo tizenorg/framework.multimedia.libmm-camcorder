@@ -22,6 +22,7 @@
 /*=======================================================================================
 |  INCLUDE FILES									|
 =======================================================================================*/
+#include <sys/time.h>
 #include <mm_sound.h>
 #include <mm_sound_private.h>
 #include <audio-session-manager.h>
@@ -643,6 +644,7 @@ gboolean _mmcamcorder_sound_finalize(MMHandleType handle)
 	info = &(hcamcorder->snd_info);
 
 	_mmcam_dbg_err("START");
+
 	/*Add the delay because we don't know when shutter sound was complete */
 	usleep(100000);
 	pthread_mutex_lock(&(info->open_mutex));
@@ -776,6 +778,7 @@ void _mmcamcorder_sound_solo_play(MMHandleType handle, const char* filepath, gbo
 	int sound_enable = TRUE;
 	int sound_played = FALSE;
 	int gain_type = VOLUME_GAIN_SHUTTER1;
+	char err_msg[MAX_ERROR_MESSAGE_LEN] = {'\0',};
 
 	mmf_return_if_fail(filepath && hcamcorder);
 
@@ -785,7 +788,8 @@ void _mmcamcorder_sound_solo_play(MMHandleType handle, const char* filepath, gbo
 
 	ret = pthread_mutex_trylock(&(hcamcorder->sound_lock));
 	if (ret != 0) {
-		_mmcam_dbg_warn("g_mutex_trylock failed.[%s]", strerror(ret));
+		strerror_r(errno, err_msg, MAX_ERROR_MESSAGE_LEN);
+		_mmcam_dbg_warn("g_mutex_trylock failed.[%s]", err_msg);
 		return;
 	}
 

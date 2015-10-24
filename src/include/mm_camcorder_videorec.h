@@ -60,7 +60,7 @@ typedef struct {
 	double record_timestamp_ratio;	/**< timestamp ratio of video recording for slow/fast motion recording */
 	double record_motion_rate;	/**< motion rate of video recording for slow/fast motion recording */
 	GstClockTime prev_preview_ts;	/**< previous preview frame timestamp */
-	GstClockTime prev_video_ts;	/**< previous video frame timestamp */
+	GstClockTime base_video_ts;	/**< base video frame timestamp */
 	guint record_drop_count;	/**< drop count of video recording for slow/fast motion recording */
 	guint64 video_frame_count;	/**< current video frame */
 	guint64 audio_frame_count;	/**< current audio frame */
@@ -74,7 +74,8 @@ typedef struct {
 	int video_width;		/**< video width */
 	int video_height;		/**< video height */
 	int fps;			/**< fps in videosrc caps */
-	int is_firstframe;
+	gboolean is_firstframe;
+	gboolean get_first_I_frame;	/**< start flag for H.264 preview recording */
 	gboolean support_dual_stream;	/**< support dual stream flag */
 	gboolean record_dual_stream;	/**< record with dual stream flag */
 	gboolean restart_preview;	/**< flag for whether restart preview or not when start recording */

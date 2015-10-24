@@ -22,10 +22,12 @@
 /*=======================================================================================
 |  INCLUDE FILES									|
 =======================================================================================*/
-#include <gst/interfaces/xoverlay.h>
-#include <gst/interfaces/cameracontrol.h>
+#include <gst/audio/audio-format.h>
+#include <gst/video/videooverlay.h>
+#include <gst/video/cameracontrol.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <tbm_bufmgr.h>
 
 #include "mm_camcorder_internal.h"
 #include "mm_camcorder_gstcommon.h"
@@ -35,84 +37,84 @@
 -----------------------------------------------------------------------*/
 /* Table for compatibility between audio codec and file format */
 gboolean	audiocodec_fileformat_compatibility_table[MM_AUDIO_CODEC_NUM][MM_FILE_FORMAT_NUM] =
-{          /* 3GP ASF AVI MATROSKA MP4 OGG NUT QT REAL AMR AAC MP3 AIFF AU WAV MID MMF DIVX FLV VOB IMELODY WMA WMV JPG */
-/*AMR*/       { 1,  0,  0,       0,  0,  0,  0, 0,   0,  1,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G723.1*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MP3*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*OGG*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AAC*/       { 1,  0,  1,       1,  1,  0,  0, 0,   0,  0,  1,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*WMA*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MMF*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*ADPCM*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*WAVE*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  1,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*WAVE_NEW*/  { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MIDI*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*IMELODY*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MXMF*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPA*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MP2*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G711*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G722*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G722.1*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G722.2*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G723*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G726*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G728*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G729*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G729A*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*G729.1*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*REAL*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AAC_LC*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AAC_MAIN*/  { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AAC_SRS*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AAC_LTP*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AAC_HE_V1*/ { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AAC_HE_V2*/ { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AC3*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*ALAC*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*ATRAC*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*SPEEX*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*VORBIS*/    { 0,  0,  0,       0,  0,  1,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AIFF*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AU*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*NONE*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*PCM*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*ALAW*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MULAW*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MS_ADPCM*/  { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
+{          /* 3GP ASF AVI MATROSKA MP4 OGG NUT QT REAL AMR AAC MP3 AIFF AU WAV MID MMF DIVX FLV VOB IMELODY WMA WMV JPG FLAC M2TS*/
+/*AMR*/       { 1,  0,  0,       0,  0,  0,  0, 0,   0,  1,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G723.1*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MP3*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*OGG*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AAC*/       { 1,  0,  1,       1,  1,  0,  0, 0,   0,  0,  1,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   1},
+/*WMA*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MMF*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*ADPCM*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*WAVE*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  1,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*WAVE_NEW*/  { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MIDI*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*IMELODY*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MXMF*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPA*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MP2*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G711*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G722*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G722.1*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G722.2*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G723*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G726*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G728*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G729*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G729A*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*G729.1*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*REAL*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AAC_LC*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AAC_MAIN*/  { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AAC_SRS*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AAC_LTP*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AAC_HE_V1*/ { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AAC_HE_V2*/ { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AC3*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   1},
+/*ALAC*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*ATRAC*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*SPEEX*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*VORBIS*/    { 0,  0,  0,       0,  0,  1,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AIFF*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AU*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*NONE*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*PCM*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*ALAW*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MULAW*/     { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MS_ADPCM*/  { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
 };
 
 /* Table for compatibility between video codec and file format */
 gboolean	videocodec_fileformat_compatibility_table[MM_VIDEO_CODEC_NUM][MM_FILE_FORMAT_NUM] =
-{             /* 3GP ASF AVI MATROSKA MP4 OGG NUT QT REAL AMR AAC MP3 AIFF AU WAV MID MMF DIVX FLV VOB IMELODY WMA WMV JPG */
-/*NONE*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*H263*/         { 1,  0,  1,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*H264*/         { 1,  0,  1,       1,  1,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*H26L*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG4*/        { 1,  0,  1,       1,  1,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG1*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*WMV*/          { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*DIVX*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*XVID*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*H261*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*H262*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*H263V2*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*H263V3*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MJPEG*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG2*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG4_SIMPLE*/ { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG4_ADV*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG4_MAIN*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG4_CORE*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG4_ACE*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG4_ARTS*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*MPEG4_AVC*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*REAL*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*VC1*/          { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*AVS*/          { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*CINEPAK*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*INDEO*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
-/*THEORA*/       { 0,  0,  0,       0,  0,  1,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,  },
+{             /* 3GP ASF AVI MATROSKA MP4 OGG NUT QT REAL AMR AAC MP3 AIFF AU WAV MID MMF DIVX FLV VOB IMELODY WMA WMV JPG FLAC M2TS*/
+/*NONE*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*H263*/         { 1,  0,  1,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*H264*/         { 1,  0,  1,       1,  1,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   1},
+/*H26L*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG4*/        { 1,  0,  1,       1,  1,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   1},
+/*MPEG1*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*WMV*/          { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*DIVX*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*XVID*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*H261*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*H262*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*H263V2*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*H263V3*/       { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MJPEG*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG2*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG4_SIMPLE*/ { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG4_ADV*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG4_MAIN*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG4_CORE*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG4_ACE*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG4_ARTS*/   { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*MPEG4_AVC*/    { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*REAL*/         { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*VC1*/          { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*AVS*/          { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*CINEPAK*/      { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*INDEO*/        { 0,  0,  0,       0,  0,  0,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
+/*THEORA*/       { 0,  0,  0,       0,  0,  1,  0, 0,   0,  0,  0,  0,   0, 0,  0,  0,  0,   0,  0,  0,      0,  0,  0,  0,   0,   0},
 };
 
 
@@ -123,7 +125,9 @@ gboolean	videocodec_fileformat_compatibility_table[MM_VIDEO_CODEC_NUM][MM_FILE_F
 #define _MMCAMCORDER_CONVERT_OUTPUT_BUFFER_NUM    6
 #define _MMCAMCORDER_MIN_TIME_TO_PASS_FRAME       30000000 /* ns */
 #define _MMCAMCORDER_FRAME_PASS_MIN_FPS           30
-
+#define _MMCAMCORDER_NANOSEC_PER_1SEC             1000000000
+#define _MMCAMCORDER_NANOSEC_PER_1MILISEC         1000
+#define _MMCAMCORDER_VIDEO_DECODER_NAME_PREFIX    "avdec_h264"
 
 /*-----------------------------------------------------------------------
 |    LOCAL FUNCTION PROTOTYPES:						|
@@ -141,11 +145,11 @@ gboolean	videocodec_fileformat_compatibility_table[MM_VIDEO_CODEC_NUM][MM_FILE_F
  * @remarks
  * @see		__mmcamcorder_create_preview_pipeline()
  */
-static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *buffer, gpointer u_data);
-static gboolean __mmcamcorder_video_dataprobe_push_buffer_to_record(GstPad *pad, GstBuffer *buffer, gpointer u_data);
+static GstPadProbeReturn __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstPadProbeInfo *info, gpointer u_data);
+static GstPadProbeReturn __mmcamcorder_video_dataprobe_push_buffer_to_record(GstPad *pad, GstPadProbeInfo *info, gpointer u_data);
 static void __mmcamcorder_videoframe_render_error_cb(GstElement *element, void *error_id, gpointer u_data);
-
 static int __mmcamcorder_get_amrnb_bitrate_mode(int bitrate);
+static guint32 _mmcamcorder_convert_fourcc_string_to_value(const gchar* format_name);
 
 /*=======================================================================================
 |  FUNCTION DEFINITIONS									|
@@ -283,18 +287,47 @@ int _mmcamcorder_create_preview_elements(MMHandleType handle)
 	/* Set basic infomation of videosrc element */
 	_mmcamcorder_conf_set_value_element_property(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst, VideosrcElement);
 
+	/* make demux and decoder for H264 stream from videosrc */
+	if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+		int preview_bitrate = 0;
+		int iframe_interval = 0;
+		char decoder_name[20] = {'\0',};
+
+		/* set encoded preview bitrate and iframe interval */
+		mm_camcorder_get_attributes(handle, NULL,
+		                            MMCAM_ENCODED_PREVIEW_BITRATE, &preview_bitrate,
+		                            MMCAM_ENCODED_PREVIEW_IFRAME_INTERVAL, &iframe_interval,
+		                            NULL);
+
+		snprintf(decoder_name, sizeof(decoder_name)-1, "%s", _MMCAMCORDER_VIDEO_DECODER_NAME_PREFIX);
+
+		_mmcam_dbg_log("encoded preview bitrate %d, iframe_interval %d, decoder_name %s",
+		               preview_bitrate, iframe_interval, decoder_name);
+
+		if (!_mmcamcorder_set_encoded_preview_bitrate(handle, preview_bitrate)) {
+			_mmcam_dbg_warn("_mmcamcorder_set_encoded_preview_bitrate failed");
+		}
+
+		if (!_mmcamcorder_set_encoded_preview_iframe_interval(handle, iframe_interval)) {
+			_mmcam_dbg_warn("_mmcamcorder_set_encoded_preview_iframe_interval failed");
+		}
+
+		/* create decoder element */
+		_MMCAMCORDER_ELEMENT_MAKE(sc, sc->element, _MMCAMCORDER_VIDEOSRC_DECODE, decoder_name, "videosrc_decode", element_list, err);
+	}
+
 	_mmcam_dbg_log("Current mode[%d]", hcamcorder->type);
 
 	/* Get videosink name */
 	_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
 
+	_MMCAMCORDER_ELEMENT_MAKE(sc, sc->element, _MMCAMCORDER_VIDEOSINK_QUE, "queue", "videosink_queue", element_list, err);
+
 	/* Add color converting element */
-	if (!strcmp(videosink_name, "evasimagesink") ||
-	    !strcmp(videosink_name, "ximagesink")) {
-		_MMCAMCORDER_ELEMENT_MAKE(sc, sc->element, _MMCAMCORDER_VIDEOSINK_CLS, "ffmpegcolorspace", "videosrc_convert", element_list, err);
+	if (!strcmp(videosink_name, "evasimagesink") || !strcmp(videosink_name, "ximagesink")) {
+		_MMCAMCORDER_ELEMENT_MAKE(sc, sc->element, _MMCAMCORDER_VIDEOSINK_CLS, "videoconvert", "videosrc_convert", element_list, err);
 	}
 
-	_MMCAMCORDER_ELEMENT_MAKE(sc, sc->element, _MMCAMCORDER_VIDEOSINK_QUE, "queue", "videosink_queue", element_list, err);
 	_MMCAMCORDER_ELEMENT_MAKE(sc, sc->element, _MMCAMCORDER_VIDEOSINK_SINK, videosink_name, "videosink_sink", element_list, err);
 
 	if (strcmp(videosink_name, "fakesink") != 0) {
@@ -338,6 +371,7 @@ pipeline_creation_error:
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->element, _MMCAMCORDER_VIDEOSRC_CLS);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->element, _MMCAMCORDER_VIDEOSRC_CLS_FILT);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->element, _MMCAMCORDER_VIDEOSRC_QUE);
+	_MMCAMCORDER_ELEMENT_REMOVE(sc->element, _MMCAMCORDER_VIDEOSRC_DECODE);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->element, _MMCAMCORDER_VIDEOSINK_QUE);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->element, _MMCAMCORDER_VIDEOSINK_CLS);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->element, _MMCAMCORDER_VIDEOSINK_SINK);
@@ -368,6 +402,8 @@ int _mmcamcorder_create_audiosrc_bin(MMHandleType handle)
 	GstCaps *caps = NULL;
 	GstPad *pad = NULL;
 	GList *element_list  = NULL;
+	int size = 0;
+	char *device_id = NULL;
 
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
@@ -395,6 +431,7 @@ int _mmcamcorder_create_audiosrc_bin(MMHandleType handle)
 	                                  MMCAM_AUDIO_FORMAT, &format,
 	                                  MMCAM_AUDIO_CHANNEL, &channel,
 	                                  MMCAM_AUDIO_VOLUME, &volume,
+	                                  MMCAM_USB_AUDIO_UDEV_ID, &device_id, &size,
 	                                  NULL);
 	if (err != MM_ERROR_NONE) {
 		_mmcam_dbg_warn("Get attrs fail. (%s:%x)", err_name, err);
@@ -441,12 +478,15 @@ int _mmcamcorder_create_audiosrc_bin(MMHandleType handle)
 
 	_mmcamcorder_conf_set_value_element_property(sc->encode_element[_MMCAMCORDER_AUDIOSRC_SRC].gst, AudiosrcElement);
 
+	if(device_id != NULL)
+		MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_AUDIOSRC_SRC].gst, "device-id", device_id);
+
 	_MMCAMCORDER_ELEMENT_MAKE(sc, sc->encode_element, _MMCAMCORDER_AUDIOSRC_FILT, "capsfilter", "audiosrc_capsfilter", element_list, err);
 
 	_MMCAMCORDER_ELEMENT_MAKE(sc, sc->encode_element, _MMCAMCORDER_AUDIOSRC_QUE, "queue", "audiosrc_queue", element_list, err);
 	MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_AUDIOSRC_QUE].gst, "max-size-buffers", 0);
 	MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_AUDIOSRC_QUE].gst, "max-size-bytes", 0);
-	MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_AUDIOSRC_QUE].gst, "max-size-time", (int64_t)0);
+	MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_AUDIOSRC_QUE].gst, "max-size-time", 0);
 
 	if (a_enc != MM_AUDIO_CODEC_VORBIS) {
 		_MMCAMCORDER_ELEMENT_MAKE(sc, sc->encode_element, _MMCAMCORDER_AUDIOSRC_VOL, "volume", "audiosrc_volume", element_list, err);
@@ -455,6 +495,7 @@ int _mmcamcorder_create_audiosrc_bin(MMHandleType handle)
 	/* Set basic infomation */
 	if (a_enc != MM_AUDIO_CODEC_VORBIS) {
 		int depth = 0;
+		const gchar* format_name = NULL;
 
 		if (volume == 0.0) {
 			/* Because data probe of audio src do the same job, it doesn't need to set "mute" here. Already null raw data. */
@@ -466,31 +507,32 @@ int _mmcamcorder_create_audiosrc_bin(MMHandleType handle)
 
 		if (format == MM_CAMCORDER_AUDIO_FORMAT_PCM_S16_LE) {
 			depth = 16;
+			format_name = "S16LE";
 		} else { /* MM_CAMCORDER_AUDIO_FORMAT_PCM_U8 */
 			depth = 8;
+			format_name = "U8";
 		}
 
-		caps = gst_caps_new_simple("audio/x-raw-int",
-		                           "rate", G_TYPE_INT, rate,
-		                           "channels", G_TYPE_INT, channel,
-		                           "depth", G_TYPE_INT, depth,
-		                           NULL);
-		_mmcam_dbg_log("caps [x-raw-int, rate:%d, channel:%d, depth:%d], volume %lf",
+		caps = gst_caps_new_simple("audio/x-raw",
+					   "rate", G_TYPE_INT, rate,
+					   "channels", G_TYPE_INT, channel,
+					   "format", G_TYPE_STRING, format_name,
+					   NULL);
+		_mmcam_dbg_log("caps [x-raw, rate:%d, channel:%d, depth:%d], volume %lf",
 		               rate, channel, depth, volume);
 	} else {
 		/* what are the audio encoder which should get audio/x-raw-float? */
-		caps = gst_caps_new_simple("audio/x-raw-float",
-		                           "rate", G_TYPE_INT, rate,
-		                           "channels", G_TYPE_INT, channel,
-		                           "endianness", G_TYPE_INT, BYTE_ORDER,
-		                           "width", G_TYPE_INT, 32,
-		                           NULL);
-		_mmcam_dbg_log("caps [x-raw-float, rate:%d, channel:%d, endianness:%d, width:32]",
+		caps = gst_caps_new_simple("audio/x-raw",
+					   "rate", G_TYPE_INT, rate,
+					   "channels", G_TYPE_INT, channel,
+					   "format", G_TYPE_STRING, GST_AUDIO_NE(F32),
+					   NULL);
+		_mmcam_dbg_log("caps [x-raw (F32), rate:%d, channel:%d, endianness:%d, width:32]",
 		               rate, channel, BYTE_ORDER);
 	}
 
 	if (caps) {
-		MMCAMCORDER_G_OBJECT_SET((sc->encode_element[_MMCAMCORDER_AUDIOSRC_FILT].gst), "caps", caps);
+		MMCAMCORDER_G_OBJECT_SET_POINTER((sc->encode_element[_MMCAMCORDER_AUDIOSRC_FILT].gst), "caps", caps);
 		gst_caps_unref(caps);
 		caps = NULL;
 	} else {
@@ -513,7 +555,7 @@ int _mmcamcorder_create_audiosrc_bin(MMHandleType handle)
 
 	last_element = (_MMCamcorderGstElement*)(g_list_last(element_list)->data);
 	pad = gst_element_get_static_pad(last_element->gst, "src");
-	if ((gst_element_add_pad(sc->encode_element[_MMCAMCORDER_AUDIOSRC_BIN].gst, gst_ghost_pad_new("src", pad) )) < 0) {
+	if (!gst_element_add_pad(sc->encode_element[_MMCAMCORDER_AUDIOSRC_BIN].gst, gst_ghost_pad_new("src", pad))) {
 		gst_object_unref(pad);
 		pad = NULL;
 		_mmcam_dbg_err("failed to create ghost pad on _MMCAMCORDER_AUDIOSRC_BIN.");
@@ -534,6 +576,7 @@ int _mmcamcorder_create_audiosrc_bin(MMHandleType handle)
 pipeline_creation_error:
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->encode_element, _MMCAMCORDER_AUDIOSRC_SRC);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->encode_element, _MMCAMCORDER_AUDIOSRC_FILT);
+	_MMCAMCORDER_ELEMENT_REMOVE(sc->encode_element, _MMCAMCORDER_AUDIOSRC_QUE);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->encode_element, _MMCAMCORDER_AUDIOSRC_VOL);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->encode_element, _MMCAMCORDER_AUDIOSRC_BIN);
 
@@ -569,8 +612,8 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 	const char *str_acs = NULL;
 	char *err_name = NULL;
 	const char *videoconvert_name = NULL;
-
-	GstCaps *caps = NULL;
+	GstCaps *audio_caps = NULL;
+	GstCaps *video_caps = NULL;
 	GstPad *pad = NULL;
 	GList *element_list = NULL;
 
@@ -603,8 +646,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 
 	/* Create child element */
 	if (profile != MM_CAMCORDER_ENCBIN_PROFILE_AUDIO) {
-		GstCaps *video_caps = NULL;
-		GstCaps *get_caps = NULL;
+		GstCaps *caps_from_pad = NULL;
 
 		/* create appsrc and capsfilter */
 		_MMCAMCORDER_ELEMENT_MAKE(sc, sc->encode_element, _MMCAMCORDER_ENCSINK_SRC, "appsrc", "encodesink_src", element_list, err);
@@ -619,54 +661,49 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 
 		/* set appsrc as live source */
 		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst, "is-live", TRUE);
-		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst, "max-bytes", (int64_t)0);
+		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst, "format", 3); /* GST_FORMAT_TIME */
+		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst, "max-bytes", 0); /* unlimited */
 
 		/* set capsfilter */
-		if (sc->element[_MMCAMCORDER_VIDEOSINK_CLS].gst) {
-			_mmcam_dbg_log("make video/x-raw-rgb caps");
-			video_caps = gst_caps_new_simple("video/x-raw-rgb",
-			                                 NULL);
+		if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+			_mmcam_dbg_log("get pad from videosrc_filter");
+			pad = gst_element_get_static_pad(sc->element[_MMCAMCORDER_VIDEOSRC_FILT].gst, "src");
 		} else {
-			_mmcam_dbg_log("get caps from videosrc_filter");
-			MMCAMCORDER_G_OBJECT_GET(sc->element[_MMCAMCORDER_VIDEOSRC_FILT].gst, "caps", &get_caps);
-			if (get_caps) {
-				video_caps = gst_caps_copy(get_caps);
-				gst_caps_unref(get_caps);
-				get_caps = NULL;
-			}
+			_mmcam_dbg_log("get pad from videosrc_que");
+			pad = gst_element_get_static_pad(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "src");
+		}
+		if (!pad) {
+			_mmcam_dbg_err("get videosrc_que src pad failed");
+			err = MM_ERROR_CAMCORDER_RESOURCE_CREATION;
+			goto pipeline_creation_error;
 		}
 
+		caps_from_pad = gst_pad_get_allowed_caps(pad);
+		video_caps = gst_caps_copy(caps_from_pad);
+		gst_caps_unref(caps_from_pad);
+		caps_from_pad = NULL;
+		gst_object_unref(pad);
+		pad = NULL;
+
 		if (video_caps) {
-			int set_width = 0;
-			int set_height = 0;
-			int set_fps = 0;
+			char *caps_str = NULL;
 
-			/* normal camera */
-			set_width = sc->info_video->video_width;
-			set_height = sc->info_video->video_height;
-
-			/* get fps setting */
-			mm_camcorder_get_attributes(handle, NULL,
-			                            MMCAM_CAMERA_FPS, &set_fps,
-			                            NULL);
-
-			if(profile != MM_CAMCORDER_ENCBIN_PROFILE_IMAGE) {
+			if (profile == MM_CAMCORDER_ENCBIN_PROFILE_VIDEO) {
 				gst_caps_set_simple(video_caps,
-				                    "width", G_TYPE_INT, set_width,
-				                    "height", G_TYPE_INT, set_height,
-				                    "framerate", GST_TYPE_FRACTION, set_fps, 1,
+				                    "width", G_TYPE_INT, sc->info_video->video_width,
+				                    "height", G_TYPE_INT, sc->info_video->video_height,
 				                    NULL);
-
-				_mmcam_dbg_log("video caps for encodesink bin [%"GST_PTR_FORMAT"], set size %dx%d, fps %d",
-				               video_caps, set_width, set_height, set_fps);
 			}
 
-			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_FILT].gst, "caps", video_caps);
+			caps_str = gst_caps_to_string(video_caps);
+			_mmcam_dbg_log("encodebin caps [%s]", caps_str);
+			free(caps_str);
+			caps_str = NULL;
 
-			gst_caps_unref(video_caps);
-			video_caps = NULL;
+			MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_FILT].gst, "caps", video_caps);
 		} else {
 			_mmcam_dbg_err("create recording pipeline caps failed");
+			err = MM_ERROR_CAMCORDER_RESOURCE_CREATION;
 			goto pipeline_creation_error;
 		}
 
@@ -737,10 +774,14 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 			goto pipeline_creation_error;
 		}
 
-		_mmcamcorder_conf_get_value_element_name(VideoencElement, &gst_element_venc_name);
+		if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+			gst_element_venc_name = "capsfilter";
+		} else {
+			_mmcamcorder_conf_get_value_element_name(VideoencElement, &gst_element_venc_name);
+		}
 
 		if (gst_element_venc_name) {
-			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "venc-name", gst_element_venc_name);
+			MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "venc-name", gst_element_venc_name);
 			_MMCAMCORDER_ENCODEBIN_ELMGET(sc, _MMCAMCORDER_ENCSINK_VENC, "video-encode", err);
 		} else {
 			_mmcam_dbg_err("Fail to get video encoder name");
@@ -752,27 +793,30 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 		if (auto_color_space) {
 			_mmcam_dbg_log("set video convert element [%s]", videoconvert_name);
 
-			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "vconv-name", videoconvert_name);
+			MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "vconv-name", videoconvert_name);
 			_MMCAMCORDER_ENCODEBIN_ELMGET(sc, _MMCAMCORDER_ENCSINK_VCONV, "video-convert", err);
 
 			/* set colorspace plugin property setting */
 			_mmcamcorder_conf_set_value_element_property(sc->encode_element[_MMCAMCORDER_ENCSINK_VCONV].gst, sc->VideoconvertElement);
 
+			/* fourcc type was removed in GST 1.0 */
 			if (hcamcorder->use_zero_copy_format) {
-				caps = gst_caps_new_simple("video/x-raw-yuv",
-							   "format", GST_TYPE_FOURCC, GST_MAKE_FOURCC('S','N','1','2'),
+				if(strstr(gst_element_venc_name, "omx")) {
+					video_caps = gst_caps_new_simple("video/x-raw",
+							   "format", G_TYPE_STRING, "SN12",
 							   NULL);
 
-				if (caps) {
-					_mmcam_dbg_log("set caps for color space converting [%"GST_PTR_FORMAT"]", caps);
+					if (video_caps) {
+						MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "vcaps", video_caps);
+						MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_VCONV].gst, "dst-buffer-num", _MMCAMCORDER_CONVERT_OUTPUT_BUFFER_NUM);
 
-					MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "vcaps", caps);
-					MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_VCONV].gst, "dst-buffer-num", _MMCAMCORDER_CONVERT_OUTPUT_BUFFER_NUM);
-
-					gst_caps_unref(caps);
-					caps = NULL;
+						gst_caps_unref(video_caps);
+						video_caps = NULL;
+					} else {
+						_mmcam_dbg_warn("failed to create caps");
+					}
 				} else {
-					_mmcam_dbg_warn("failed to create caps");
+					_mmcam_dbg_log("current video codec is not openmax but [%s]",gst_element_venc_name);
 				}
 			}
 		}
@@ -783,6 +827,15 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 		                                &use_venc_queue);
 		if (use_venc_queue) {
 			_MMCAMCORDER_ENCODEBIN_ELMGET(sc, _MMCAMCORDER_ENCSINK_VENC_QUE, "use-venc-queue", err);
+		}
+
+		if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+				MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_VENC].gst, "caps", video_caps);
+		}
+
+		if(video_caps) {
+			gst_caps_unref(video_caps);
+			video_caps = NULL;
 		}
 	}
 
@@ -799,26 +852,25 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 
 		_mmcamcorder_conf_get_value_element_name(AudioencElement, &gst_element_aenc_name);
 
-		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "aenc-name", gst_element_aenc_name);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "aenc-name", gst_element_aenc_name);
 		_MMCAMCORDER_ENCODEBIN_ELMGET(sc, _MMCAMCORDER_ENCSINK_AENC, "audio-encode", err);
 
 		if (audio_enc == MM_AUDIO_CODEC_AMR && channel == 2) {
-			caps = gst_caps_new_simple("audio/x-raw-int",
+			audio_caps = gst_caps_new_simple("audio/x-raw",
 			                           "channels", G_TYPE_INT, 1,
 			                           NULL);
 			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "auto-audio-convert", TRUE);
-			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "acaps", caps);
-			gst_caps_unref (caps);
-			caps = NULL;
+			MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "acaps", audio_caps);
+			gst_caps_unref(audio_caps);
+			audio_caps = NULL;
 		}
 
 		if (audio_enc == MM_AUDIO_CODEC_OGG) {
-			caps = gst_caps_new_simple("audio/x-raw-int",
-			                           NULL);
+			audio_caps = gst_caps_new_empty_simple("audio/x-raw");
 			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "auto-audio-convert", TRUE);
-			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "acaps", caps);
-			gst_caps_unref (caps);
-			caps = NULL;
+			MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "acaps", audio_caps);
+			gst_caps_unref(audio_caps);
+			audio_caps = NULL;
 			_mmcam_dbg_log("***** MM_AUDIO_CODEC_OGG : setting audio/x-raw-int ");
 		}
 
@@ -828,7 +880,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 		                                &use_aenc_queue);
 		if (use_aenc_queue) {
 			_MMCAMCORDER_ENCODEBIN_ELMGET(sc, _MMCAMCORDER_ENCSINK_AENC_QUE, "use-aenc-queue", err);
-			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_AENC_QUE].gst,"max-size-time", (int64_t)0);
+			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_AENC_QUE].gst,"max-size-time", 0);
 			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_AENC_QUE].gst,"max-size-buffers", 0);
 		}
 	}
@@ -843,7 +895,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 
 		_mmcamcorder_conf_get_value_element_name(ImageencElement, &gst_element_ienc_name);
 
-		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "ienc-name", gst_element_ienc_name);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "ienc-name", gst_element_ienc_name);
 		_MMCAMCORDER_ENCODEBIN_ELMGET(sc, _MMCAMCORDER_ENCSINK_IENC, "image-encode", err);
 	}
 
@@ -858,7 +910,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 
 		_mmcamcorder_conf_get_value_element_name(MuxElement, &gst_element_mux_name);
 
-		MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "mux-name", gst_element_mux_name);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "mux-name", gst_element_mux_name);
 		_MMCAMCORDER_ENCODEBIN_ELMGET(sc, _MMCAMCORDER_ENCSINK_MUX, "mux", err);
 
 		_mmcamcorder_conf_set_value_element_property(sc->encode_element[_MMCAMCORDER_ENCSINK_MUX].gst, MuxElement);
@@ -888,7 +940,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 		} else {
 			_mmcam_dbg_warn("video bitrate is too small[%d], so skip setting. Use DEFAULT value.", v_bitrate);
 		}
-		/*MMCAMCORDER_G_OBJECT_SET ((sc->encode_element[_MMCAMCORDER_ENCSINK_VENC].gst),"hw-accel", v_hw);*/
+
 		_mmcamcorder_conf_set_value_element_property(sc->encode_element[_MMCAMCORDER_ENCSINK_VENC].gst, VideoencElement);
 	}
 
@@ -930,7 +982,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 
 	if (profile == MM_CAMCORDER_ENCBIN_PROFILE_VIDEO) {
 		pad = gst_element_get_request_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "video");
-		if (gst_element_add_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_BIN].gst, gst_ghost_pad_new("video_sink0", pad)) < 0) {
+		if (!gst_element_add_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_BIN].gst, gst_ghost_pad_new("video_sink0", pad))) {
 			gst_object_unref(pad);
 			pad = NULL;
 			_mmcam_dbg_err("failed to create ghost video_sink0 on _MMCAMCORDER_ENCSINK_BIN.");
@@ -942,7 +994,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 
 		if (sc->audio_disable == FALSE) {
 			pad = gst_element_get_request_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "audio");
-			if (gst_element_add_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_BIN].gst, gst_ghost_pad_new("audio_sink0", pad)) < 0) {
+			if (!gst_element_add_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_BIN].gst, gst_ghost_pad_new("audio_sink0", pad))) {
 				gst_object_unref(pad);
 				pad = NULL;
 				_mmcam_dbg_err("failed to create ghost audio_sink0 on _MMCAMCORDER_ENCSINK_BIN.");
@@ -954,7 +1006,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 		}
 	} else if (profile == MM_CAMCORDER_ENCBIN_PROFILE_AUDIO) {
 		pad = gst_element_get_request_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "audio");
-		if (gst_element_add_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_BIN].gst, gst_ghost_pad_new("audio_sink0", pad)) < 0) {
+		if (!gst_element_add_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_BIN].gst, gst_ghost_pad_new("audio_sink0", pad))) {
 			gst_object_unref(pad);
 			pad = NULL;
 			_mmcam_dbg_err("failed to create ghost audio_sink0 on _MMCAMCORDER_ENCSINK_BIN.");
@@ -966,7 +1018,7 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 	} else {
 		/* for stillshot */
 		pad = gst_element_get_request_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "image");
-		if (gst_element_add_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_BIN].gst, gst_ghost_pad_new("image_sink0", pad)) < 0) {
+		if (!gst_element_add_pad(sc->encode_element[_MMCAMCORDER_ENCSINK_BIN].gst, gst_ghost_pad_new("image_sink0", pad))) {
 			gst_object_unref(pad);
 			pad = NULL;
 			_mmcam_dbg_err("failed to create ghost image_sink0 on _MMCAMCORDER_ENCSINK_BIN.");
@@ -991,11 +1043,18 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 		element_list = NULL;
 	}
 
+	if (video_caps) {
+		gst_caps_unref(video_caps);
+		video_caps = NULL;
+	}
+
 	_mmcam_dbg_log("done");
 
 	return MM_ERROR_NONE;
 
 pipeline_creation_error :
+	_mmcamcorder_remove_all_handlers(handle, _MMCAMCORDER_HANDLER_VIDEOREC);
+
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->encode_element, _MMCAMCORDER_ENCSINK_ENCBIN);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->encode_element, _MMCAMCORDER_ENCSINK_SRC);
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->encode_element, _MMCAMCORDER_ENCSINK_FILT);
@@ -1009,6 +1068,11 @@ pipeline_creation_error :
 	if (element_list) {
 		g_list_free(element_list);
 		element_list = NULL;
+	}
+
+	if (video_caps) {
+		gst_caps_unref(video_caps);
+		video_caps = NULL;
 	}
 
 	return err;
@@ -1063,7 +1127,11 @@ int _mmcamcorder_create_preview_pipeline(MMHandleType handle)
 	}
 
 	/* set dataprobe for video recording */
-	srcpad = gst_element_get_static_pad(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "src");
+	if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+		srcpad = gst_element_get_static_pad(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst, "src");
+	} else {
+		srcpad = gst_element_get_static_pad(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst, "src");
+	}
 	MMCAMCORDER_ADD_BUFFER_PROBE(srcpad, _MMCAMCORDER_HANDLER_PREVIEW,
 	                             __mmcamcorder_video_dataprobe_push_buffer_to_record, hcamcorder);
 	gst_object_unref(srcpad);
@@ -1075,54 +1143,16 @@ int _mmcamcorder_create_preview_pipeline(MMHandleType handle)
 	hcamcorder->pipeline_cb_event_id = gst_bus_add_watch(bus, _mmcamcorder_pipeline_cb_message, (gpointer)hcamcorder);
 
 	/* set sync handler */
-	gst_bus_set_sync_handler(bus, _mmcamcorder_pipeline_bus_sync_callback, (gpointer)hcamcorder);
+	gst_bus_set_sync_handler(bus, _mmcamcorder_pipeline_bus_sync_callback, (gpointer)hcamcorder, NULL);
 
 	gst_object_unref(bus);
 	bus = NULL;
-
-	/* Below signals are meaningfull only when video source is using. */
-	MMCAMCORDER_SIGNAL_CONNECT(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst,
-	                           _MMCAMCORDER_HANDLER_PREVIEW,
-	                           "nego-complete",
-	                           _mmcamcorder_negosig_handler,
-	                           hcamcorder);
 
 	return MM_ERROR_NONE;
 
 pipeline_creation_error:
 	_MMCAMCORDER_ELEMENT_REMOVE(sc->element, _MMCAMCORDER_MAIN_PIPE);
 	return err;
-}
-
-
-void _mmcamcorder_negosig_handler(GstElement *videosrc, MMHandleType handle)
-{
-	mmf_camcorder_t *hcamcorder= MMF_CAMCORDER(handle);
-	_MMCamcorderSubContext *sc = NULL;
-
-	_mmcam_dbg_log("");
-
-	mmf_return_if_fail(hcamcorder);
-	mmf_return_if_fail(hcamcorder->sub_context);
-	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
-
-	/* kernel was modified. No need to set.
-	_mmcamcorder_set_attribute_to_camsensor(handle);
-	*/
-
-	if (sc->cam_stability_count != _MMCAMCORDER_CAMSTABLE_COUNT) {
-		sc->cam_stability_count = _MMCAMCORDER_CAMSTABLE_COUNT;
-	}
-
-	if (hcamcorder->type != MM_CAMCORDER_MODE_AUDIO) {
-		_MMCamcorderImageInfo *info = NULL;
-		info = sc->info_image;
-		if (info->resolution_change == TRUE) {
-			_mmcam_dbg_log("open toggle of stillshot sink.");
-			MMCAMCORDER_G_OBJECT_SET(sc->encode_element[_MMCAMCORDER_ENCSINK_ENCBIN].gst, "block", FALSE);
-			info->resolution_change = FALSE;
-		}
-	}
 }
 
 
@@ -1139,6 +1169,7 @@ void _mmcamcorder_ready_to_encode_callback(GstElement *element, guint size, gpoi
 
 	/* set flag */
 	if (sc->info_video->push_encoding_buffer == PUSH_ENCODING_BUFFER_INIT) {
+		sc->info_video->get_first_I_frame = FALSE;
 		sc->info_video->push_encoding_buffer = PUSH_ENCODING_BUFFER_RUN;
 		_mmcam_dbg_warn("set push_encoding_buffer RUN");
 	}
@@ -1163,6 +1194,7 @@ int _mmcamcorder_videosink_window_set(MMHandleType handle, type_element* Videosi
 	int zoom_attr = 0;
 	int zoom_level = 0;
 	int do_scaling = FALSE;
+	int display_scaler = 0;
 	int *overlay = NULL;
 	gulong xid;
 	char *err_name = NULL;
@@ -1199,6 +1231,7 @@ int _mmcamcorder_videosink_window_set(MMHandleType handle, type_element* Videosi
 	                                  MMCAM_DISPLAY_SCALE, &zoom_attr,
 	                                  MMCAM_DISPLAY_EVAS_DO_SCALING, &do_scaling,
 	                                  MMCAM_DISPLAY_SURFACE, &display_surface,
+	                                  MMCAM_DISPLAY_SCALER, &display_scaler,
 	                                  NULL);
 	if (err != MM_ERROR_NONE) {
 		if (err_name) {
@@ -1226,8 +1259,9 @@ int _mmcamcorder_videosink_window_set(MMHandleType handle, type_element* Videosi
 		_mmcam_dbg_log("set pixmap cb[%p] and user data[%p]", pixmap_cb, pixmap_cb_user_data);
 
 		/* set pixmap callback and user data */
-		MMCAMCORDER_G_OBJECT_SET(vsink, "pixmap-id-callback", pixmap_cb);
-		MMCAMCORDER_G_OBJECT_SET(vsink, "pixmap-id-callback-userdata", pixmap_cb_user_data);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(vsink, "pixmap-id-callback", pixmap_cb);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(vsink, "pixmap-id-callback-userdata", pixmap_cb_user_data);
+		MMCAMCORDER_G_OBJECT_SET(vsink, "display-scaler", display_scaler);
 
 		/* connect render error signal */
 		MMCAMCORDER_SIGNAL_CONNECT(vsink,
@@ -1244,16 +1278,16 @@ int _mmcamcorder_videosink_window_set(MMHandleType handle, type_element* Videosi
 			if (overlay) {
 				xid = *overlay;
 				_mmcam_dbg_log("xid = %lu )", xid);
-				gst_x_overlay_set_xwindow_id(GST_X_OVERLAY(vsink), xid);
+				gst_video_overlay_set_window_handle(GST_VIDEO_OVERLAY(vsink), xid);
 			} else {
 				_mmcam_dbg_warn("Handle is NULL. Set xid as 0.. but, it's not recommended.");
-				gst_x_overlay_set_xwindow_id(GST_X_OVERLAY(vsink), 0);
+				gst_video_overlay_set_window_handle(GST_VIDEO_OVERLAY(vsink), 0);
 			}
 		} else if (!strcmp(videosink_name, "evasimagesink") ||
 		           !strcmp(videosink_name, "evaspixmapsink")) {
 			_mmcam_dbg_log("videosink : %s, handle : %p", videosink_name, overlay);
 			if (overlay) {
-				MMCAMCORDER_G_OBJECT_SET(vsink, "evas-object", overlay);
+				MMCAMCORDER_G_OBJECT_SET_POINTER(vsink, "evas-object", overlay);
 				MMCAMCORDER_G_OBJECT_SET(vsink, "origin-size", !do_scaling);
 			} else {
 				_mmcam_dbg_err("display handle(eavs object) is NULL");
@@ -1295,7 +1329,7 @@ int _mmcamcorder_videosink_window_set(MMHandleType handle, type_element* Videosi
 		MMCAMCORDER_G_OBJECT_SET(vsink, "display-geometry-method", display_geometry_method);
 		MMCAMCORDER_G_OBJECT_SET(vsink, "display-mode", display_mode);
 		MMCAMCORDER_G_OBJECT_SET(vsink, "visible", visible);
-		MMCAMCORDER_G_OBJECT_SET(vsink, "zoom", (float)zoom_level);
+		MMCAMCORDER_G_OBJECT_SET(vsink, "zoom", zoom_level);
 
 		if (display_geometry_method == MM_DISPLAY_METHOD_CUSTOM_ROI) {
 			g_object_set(vsink,
@@ -1325,7 +1359,7 @@ int _mmcamcorder_vframe_stablize(MMHandleType handle)
 	mmf_camcorder_t *hcamcorder= MMF_CAMCORDER(handle);
 	_MMCamcorderSubContext *sc = NULL;
 
-	/*_mmcam_dbg_log("%d", _MMCAMCORDER_CAMSTABLE_COUNT);*/
+	_mmcam_dbg_log("%d", _MMCAMCORDER_CAMSTABLE_COUNT);
 
 	mmf_return_val_if_fail(hcamcorder, MM_ERROR_CAMCORDER_NOT_INITIALIZED);
 
@@ -1391,21 +1425,32 @@ gboolean _mmcamcorder_get_device_info(MMHandleType handle)
 	return TRUE;
 }
 
+static guint32 _mmcamcorder_convert_fourcc_string_to_value(const gchar* format_name)
+{
+    return format_name[0] | (format_name[1] << 8) | (format_name[2] << 16) | (format_name[3] << 24);
+}
 
-static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *buffer, gpointer u_data)
+static GstPadProbeReturn __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstPadProbeInfo *info, gpointer u_data)
 {
 	int current_state = MM_CAMCORDER_STATE_NONE;
+	int i = 0;
 
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(u_data);
 	_MMCamcorderSubContext *sc = NULL;
 	_MMCamcorderKPIMeasure *kpi = NULL;
+	GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
+	GstMemory *dataBlock = NULL;
+	GstMemory *metaBlock = NULL;
+	GstMapInfo mapinfo;
 
-	mmf_return_val_if_fail(buffer, FALSE);
-	mmf_return_val_if_fail(GST_BUFFER_DATA(buffer), FALSE);
-	mmf_return_val_if_fail(hcamcorder, FALSE);
+	mmf_return_val_if_fail(buffer, GST_PAD_PROBE_DROP);
+	mmf_return_val_if_fail(gst_buffer_n_memory(buffer)  , GST_PAD_PROBE_DROP);
+	mmf_return_val_if_fail(hcamcorder, GST_PAD_PROBE_DROP);
 
 	sc = MMF_CAMCORDER_SUBCONTEXT(u_data);
-	mmf_return_val_if_fail(sc, FALSE);
+	mmf_return_val_if_fail(sc, GST_PAD_PROBE_DROP);
+
+	memset(&mapinfo, 0x0, sizeof(GstMapInfo));
 
 	current_state = hcamcorder->state;
 
@@ -1416,12 +1461,12 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 		} else {
 			sc->drop_vframe--;
 			_mmcam_dbg_log("Drop video frame by drop_vframe");
-			return FALSE;
+			return GST_PAD_PROBE_DROP;
 		}
 	} else if (sc->cam_stability_count > 0) {
 		sc->cam_stability_count--;
 		_mmcam_dbg_log("Drop video frame by cam_stability_count");
-		return FALSE;
+		return GST_PAD_PROBE_DROP;
 	}
 
 	if (current_state >= MM_CAMCORDER_STATE_PREPARE) {
@@ -1467,18 +1512,19 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 		int state = MM_CAMCORDER_STATE_NULL;
 		unsigned int fourcc = 0;
 		MMCamcorderVideoStreamDataType stream;
-		SCMN_IMGB *scmn_imgb = NULL;
+		MMVideoBuffer *mm_buf = NULL;
+		const gchar *string_format = NULL;
 
 		state = _mmcamcorder_get_state((MMHandleType)hcamcorder);
 		if (state < MM_CAMCORDER_STATE_PREPARE) {
 			_mmcam_dbg_warn("Not ready for stream callback");
-			return TRUE;
+			return GST_PAD_PROBE_OK;
 		}
 
-		caps = gst_buffer_get_caps(buffer);
+		caps = gst_pad_get_current_caps(pad);
 		if (caps == NULL) {
 			_mmcam_dbg_warn( "Caps is NULL." );
-			return TRUE;
+			return GST_PAD_PROBE_OK;
 		}
 
 		/* clear stream data structure */
@@ -1487,8 +1533,20 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 		structure = gst_caps_get_structure( caps, 0 );
 		gst_structure_get_int(structure, "width", &(stream.width));
 		gst_structure_get_int(structure, "height", &(stream.height));
-		gst_structure_get_fourcc(structure, "format", &fourcc);
-		stream.format = _mmcamcorder_get_pixtype(fourcc);
+		string_format = gst_structure_get_string(structure, "format");
+		if (string_format == NULL) {
+			gst_caps_unref( caps );
+			caps = NULL;
+			_mmcam_dbg_warn("get string error!!");
+			return GST_PAD_PROBE_OK;
+		}
+
+		if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+			stream.format = MM_PIXEL_FORMAT_ENCODED_H264;
+		} else {
+			fourcc = _mmcamcorder_convert_fourcc_string_to_value(string_format);
+			stream.format = _mmcamcorder_get_pixtype(fourcc);
+		}
 		gst_caps_unref( caps );
 		caps = NULL;
 
@@ -1499,29 +1557,32 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 
 		if (stream.width == 0 || stream.height == 0) {
 			_mmcam_dbg_warn("Wrong condition!!");
-			return TRUE;
+			return GST_PAD_PROBE_OK;
 		}
 
 		/* set size and timestamp */
-		stream.length_total = GST_BUFFER_SIZE(buffer);
-		stream.timestamp = (unsigned int)(GST_BUFFER_TIMESTAMP(buffer)/1000000); /* nano sec -> mili sec */
+		dataBlock = gst_buffer_peek_memory(buffer, 0);
+		stream.length_total = gst_memory_get_sizes(dataBlock, NULL, NULL);
+		stream.timestamp = (unsigned int)(GST_BUFFER_PTS(buffer)/1000000); /* nano sec -> mili sec */
 
-		if (hcamcorder->use_zero_copy_format && GST_BUFFER_MALLOCDATA(buffer)) {
-			scmn_imgb = (SCMN_IMGB *)GST_BUFFER_MALLOCDATA(buffer);
+		if (hcamcorder->use_zero_copy_format && gst_buffer_n_memory(buffer) > 1) {
+			metaBlock = gst_buffer_peek_memory(buffer, 1);
+			gst_memory_map(metaBlock, &mapinfo, GST_MAP_READ);
+			mm_buf = (MMVideoBuffer *)mapinfo.data;
 		}
 
 		/* set data pointers */
 		if (stream.format == MM_PIXEL_FORMAT_NV12 ||
 		    stream.format == MM_PIXEL_FORMAT_NV21 ||
 		    stream.format == MM_PIXEL_FORMAT_I420) {
-			if (scmn_imgb) {
+			if (mm_buf) {
 				if (stream.format == MM_PIXEL_FORMAT_NV12 ||
 				    stream.format == MM_PIXEL_FORMAT_NV21) {
 					stream.data_type = MM_CAM_STREAM_DATA_YUV420SP;
 					stream.num_planes = 2;
-					stream.data.yuv420sp.y = scmn_imgb->a[0];
+					stream.data.yuv420sp.y = mm_buf->data[0];
 					stream.data.yuv420sp.length_y = stream.width * stream.height;
-					stream.data.yuv420sp.uv = scmn_imgb->a[1];
+					stream.data.yuv420sp.uv = mm_buf->data[1];
 					stream.data.yuv420sp.length_uv = stream.data.yuv420sp.length_y >> 1;
 					/*
 					_mmcam_dbg_log("format[%d][num_planes:%d] [Y]p:0x%x,size:%d [UV]p:0x%x,size:%d",
@@ -1532,11 +1593,11 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 				} else {
 					stream.data_type = MM_CAM_STREAM_DATA_YUV420P;
 					stream.num_planes = 3;
-					stream.data.yuv420p.y = scmn_imgb->a[0];
+					stream.data.yuv420p.y = mm_buf->data[0];
 					stream.data.yuv420p.length_y = stream.width * stream.height;
-					stream.data.yuv420p.u = scmn_imgb->a[1];
+					stream.data.yuv420p.u = mm_buf->data[1];
 					stream.data.yuv420p.length_u = stream.data.yuv420p.length_y >> 2;
-					stream.data.yuv420p.v = scmn_imgb->a[2];
+					stream.data.yuv420p.v = mm_buf->data[2];
 					stream.data.yuv420p.length_v = stream.data.yuv420p.length_u;
 					/*
 					_mmcam_dbg_log("S420[num_planes:%d] [Y]p:0x%x,size:%d [U]p:0x%x,size:%d [V]p:0x%x,size:%d",
@@ -1547,11 +1608,12 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 					*/
 				}
 			} else {
+				gst_memory_map(dataBlock, &mapinfo, GST_MAP_READWRITE);
 				if (stream.format == MM_PIXEL_FORMAT_NV12 ||
 				    stream.format == MM_PIXEL_FORMAT_NV21) {
 					stream.data_type = MM_CAM_STREAM_DATA_YUV420SP;
 					stream.num_planes = 2;
-					stream.data.yuv420sp.y = GST_BUFFER_DATA(buffer);
+					stream.data.yuv420sp.y = mapinfo.data;
 					stream.data.yuv420sp.length_y = stream.width * stream.height;
 					stream.data.yuv420sp.uv = stream.data.yuv420sp.y + stream.data.yuv420sp.length_y;
 					stream.data.yuv420sp.length_uv = stream.data.yuv420sp.length_y >> 1;
@@ -1564,7 +1626,7 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 				} else {
 					stream.data_type = MM_CAM_STREAM_DATA_YUV420P;
 					stream.num_planes = 3;
-					stream.data.yuv420p.y = GST_BUFFER_DATA(buffer);
+					stream.data.yuv420p.y = mapinfo.data;
 					stream.data.yuv420p.length_y = stream.width * stream.height;
 					stream.data.yuv420p.u = stream.data.yuv420p.y + stream.data.yuv420p.length_y;
 					stream.data.yuv420p.length_u = stream.data.yuv420p.length_y >> 2;
@@ -1580,16 +1642,28 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 				}
 			}
 		} else {
+			if (mm_buf) {
+				gst_memory_unmap(metaBlock, &mapinfo);
+				metaBlock = NULL;
+			}
+			gst_memory_map(dataBlock, &mapinfo, GST_MAP_READWRITE);
 			if (stream.format == MM_PIXEL_FORMAT_YUYV ||
 			    stream.format == MM_PIXEL_FORMAT_UYVY ||
 			    stream.format == MM_PIXEL_FORMAT_422P ||
 			    stream.format == MM_PIXEL_FORMAT_ITLV_JPEG_UYVY) {
 				stream.data_type = MM_CAM_STREAM_DATA_YUV422;
-				stream.data.yuv422.yuv = GST_BUFFER_DATA(buffer);
+				stream.data.yuv422.yuv = mapinfo.data;
 				stream.data.yuv422.length_yuv = stream.length_total;
+			} else if (stream.format == MM_PIXEL_FORMAT_ENCODED_H264) {
+				stream.data_type = MM_CAM_STREAM_DATA_ENCODED;
+				stream.data.encoded.data = mapinfo.data;
+				stream.data.encoded.length_data = stream.length_total;
+				_mmcam_dbg_log("H264[num_planes:%d] [0]p:0x%x,size:%d",
+				               fourcc, fourcc>>8, fourcc>>16, fourcc>>24, stream.num_planes,
+				               stream.data.encoded.data, stream.data.encoded.length_data);
 			} else {
 				stream.data_type = MM_CAM_STREAM_DATA_YUV420;
-				stream.data.yuv420.yuv = GST_BUFFER_DATA(buffer);
+				stream.data.yuv420.yuv = mapinfo.data;
 				stream.data.yuv420.length_yuv = stream.length_total;
 			}
 
@@ -1602,13 +1676,12 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 		}
 
 		/* set tbm bo */
-		if (scmn_imgb) {
-			int i = 0;
-
-			for (i = 0 ; i < SCMN_IMGB_MAX_PLANE ; i++) {
-				stream.bo[i] = (void *)scmn_imgb->bo[i];
-				stream.stride[i] = scmn_imgb->s[i];
-				stream.elevation[i] = scmn_imgb->e[i];
+		if (mm_buf && mm_buf->type == MM_VIDEO_BUFFER_TYPE_TBM_BO) {
+			/* set bo, stride and elevation */
+			for (i = 0 ; i < MM_VIDEO_BUFFER_PLANE_MAX ; i++) {
+				stream.bo[i] = (void *)mm_buf->handle.bo[i];
+				stream.stride[i] = mm_buf->stride_width[i];
+				stream.elevation[i] = mm_buf->stride_height[i];
 			}
 
 			/* set gst buffer */
@@ -1619,26 +1692,37 @@ static gboolean __mmcamcorder_video_dataprobe_preview(GstPad *pad, GstBuffer *bu
 		_MMCAMCORDER_LOCK_VSTREAM_CALLBACK(hcamcorder);
 		if (hcamcorder->vstream_cb) {
 			hcamcorder->vstream_cb(&stream, hcamcorder->vstream_cb_param);
+
+			for (i = 0 ; i < MM_VIDEO_BUFFER_PLANE_MAX && stream.bo[i] ; i++) {
+				tbm_bo_map(stream.bo[i], TBM_DEVICE_CPU, TBM_OPTION_READ|TBM_OPTION_WRITE);
+				tbm_bo_unmap(stream.bo[i]);
+			}
 		}
 		_MMCAMCORDER_UNLOCK_VSTREAM_CALLBACK(hcamcorder);
+		/* Either metaBlock was mapped, or dataBlock, but not both. */
+		if (metaBlock) {
+			gst_memory_unmap(metaBlock, &mapinfo);
+		}else {
+			gst_memory_unmap(dataBlock, &mapinfo);
+		}
 	}
 
-	return TRUE;
+	return GST_PAD_PROBE_OK;
 }
 
-
-static gboolean __mmcamcorder_video_dataprobe_push_buffer_to_record(GstPad *pad, GstBuffer *buffer, gpointer u_data)
+static GstPadProbeReturn __mmcamcorder_video_dataprobe_push_buffer_to_record(GstPad *pad, GstPadProbeInfo *info, gpointer u_data)
 {
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(u_data);
 	_MMCamcorderSubContext *sc = NULL;
 	GstClockTime diff = 0;           /* nsec */
+	GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER(info);
 
-	mmf_return_val_if_fail(buffer, FALSE);
-	mmf_return_val_if_fail(GST_BUFFER_DATA(buffer), FALSE);
-	mmf_return_val_if_fail(hcamcorder, FALSE);
+	mmf_return_val_if_fail(buffer, GST_PAD_PROBE_DROP);
+	mmf_return_val_if_fail(gst_buffer_n_memory(buffer), GST_PAD_PROBE_DROP);
+	mmf_return_val_if_fail(hcamcorder, GST_PAD_PROBE_DROP);
 
 	sc = MMF_CAMCORDER_SUBCONTEXT(u_data);
-	mmf_return_val_if_fail(sc, FALSE);
+	mmf_return_val_if_fail(sc, GST_PAD_PROBE_DROP);
 
 	/* push buffer in appsrc to encode */
 	if(!sc->info_video) {
@@ -1650,29 +1734,67 @@ static gboolean __mmcamcorder_video_dataprobe_push_buffer_to_record(GstPad *pad,
 	    sc->info_video->record_dual_stream == FALSE &&
 	    sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst) {
 		int ret = 0;
-		GstClock *pipe_clock = NULL;
-		GstClockTime timestamp = GST_CLOCK_TIME_NONE;
+		GstClock *clock = NULL;
 
-		pipe_clock = GST_ELEMENT_CLOCK(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst);
-		if (pipe_clock) {
-			gst_object_ref(pipe_clock);
-			timestamp = gst_clock_get_time(pipe_clock) - GST_ELEMENT(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst)->base_time;
-			gst_object_unref(pipe_clock);
+		/*
+		_mmcam_dbg_log("GST_BUFFER_FLAG_DELTA_UNIT is set : %d",
+		               GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT));
+		*/
 
-			/*
-			_mmcam_dbg_log("new time stamp %p [%"GST_TIME_FORMAT"], base time [%"GST_TIME_FORMAT"]",
-			               buffer, GST_TIME_ARGS(timestamp), GST_TIME_ARGS(GST_ELEMENT(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst)->base_time));
-			*/
-
-			if (sc->info_video->prev_video_ts >= timestamp) {
-				_mmcam_dbg_warn("invalid time stamp %p [%"GST_TIME_FORMAT"], make it different",
-				                buffer, GST_TIME_ARGS(timestamp));
-				timestamp = sc->info_video->prev_video_ts + NANO_SEC_PER_MILI_SEC;
+		/* check first I frame */
+		if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264 &&
+		    sc->info_video->get_first_I_frame == FALSE) {
+			if (!GST_BUFFER_FLAG_IS_SET(buffer, GST_BUFFER_FLAG_DELTA_UNIT)) {
+				_mmcam_dbg_warn("first I frame is come");
+				sc->info_video->get_first_I_frame = TRUE;
+			} else {
+				_mmcam_dbg_warn("NOT I frame.. skip this buffer");
+				return TRUE;
 			}
+		}
 
-			GST_BUFFER_TIMESTAMP(buffer) = timestamp;
+		if (sc->encode_element[_MMCAMCORDER_AUDIOSRC_SRC].gst) {
+			if (sc->info_video->is_firstframe) {
+				sc->info_video->is_firstframe = FALSE;
+				clock = GST_ELEMENT_CLOCK(sc->encode_element[_MMCAMCORDER_AUDIOSRC_SRC].gst);
+				if (clock) {
+					gst_object_ref(clock);
+					sc->info_video->base_video_ts = GST_BUFFER_PTS(buffer) - (gst_clock_get_time(clock) - GST_ELEMENT(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst)->base_time);
+					gst_object_unref(clock);
+				}
+			}
+		} else {
+			if(sc->info_video->is_firstframe) {
+				if (sc->bencbin_capture && sc->info_image->capturing) {
+					pthread_mutex_lock(&(hcamcorder->task_thread_lock));
+					_mmcam_dbg_log("send signal for sound play");
+					hcamcorder->task_thread_state = _MMCAMCORDER_TASK_THREAD_STATE_SOUND_SOLO_PLAY_START;
+					pthread_cond_signal(&(hcamcorder->task_thread_cond));
+					pthread_mutex_unlock(&(hcamcorder->task_thread_lock));
+				}
+				sc->info_video->is_firstframe = FALSE;
+				sc->info_video->base_video_ts = GST_BUFFER_PTS(buffer);
+			}
+		}
+		GST_BUFFER_PTS(buffer) = GST_BUFFER_PTS(buffer) - sc->info_video->base_video_ts;
+		GST_BUFFER_DTS(buffer) = GST_BUFFER_PTS(buffer);
 
-			sc->info_video->prev_video_ts = timestamp;
+		/*_mmcam_dbg_log("buffer %p, timestamp %"GST_TIME_FORMAT, buffer, GST_TIME_ARGS(GST_BUFFER_PTS(buffer)));*/
+
+		if (0) {
+			GstCaps *caps = gst_pad_get_current_caps(pad);
+			if (caps) {
+				char *caps_string = gst_caps_to_string(caps);
+				if (caps_string) {
+					_mmcam_dbg_log("%s", caps_string);
+					free(caps_string);
+					caps_string = NULL;
+				}
+				gst_caps_unref(caps);
+				caps = NULL;
+			} else {
+				_mmcam_dbg_warn("failed to get caps from pad");
+			}
 		}
 
 		g_signal_emit_by_name(sc->encode_element[_MMCAMCORDER_ENCSINK_SRC].gst, "push-buffer", buffer, &ret);
@@ -1681,22 +1803,21 @@ static gboolean __mmcamcorder_video_dataprobe_push_buffer_to_record(GstPad *pad,
 	}
 
 	/* skip display if too fast FPS */
-	if (sc->info_video ) {
-		if (sc->info_video->fps > _MMCAMCORDER_FRAME_PASS_MIN_FPS) {
-			if (sc->info_video->prev_preview_ts != 0) {
-				diff = GST_BUFFER_TIMESTAMP(buffer) - sc->info_video->prev_preview_ts;
-				if (diff < _MMCAMCORDER_MIN_TIME_TO_PASS_FRAME) {
-					return FALSE;
-				}
+	if (sc->info_video && sc->info_video->fps > _MMCAMCORDER_FRAME_PASS_MIN_FPS) {
+		if (sc->info_video->prev_preview_ts != 0) {
+			diff = GST_BUFFER_PTS(buffer) - sc->info_video->prev_preview_ts;
+			if (diff < _MMCAMCORDER_MIN_TIME_TO_PASS_FRAME) {
+				_mmcam_dbg_log("it's too fast. drop frame...");
+				return GST_PAD_PROBE_DROP;
 			}
 		}
 
 		/*_mmcam_dbg_log("diff %llu", diff);*/
 
-		sc->info_video->prev_preview_ts = GST_BUFFER_TIMESTAMP(buffer);
+		sc->info_video->prev_preview_ts = GST_BUFFER_PTS(buffer);
 	}
 
-	return TRUE;
+	return GST_PAD_PROBE_OK;
 }
 
 
@@ -1964,6 +2085,10 @@ bool _mmcamcorder_set_display_rotation(MMHandleType handle, int display_rotate)
 	if (sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst) {
 		/* Get videosink name */
 		_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+		if (videosink_name == NULL) {
+			_mmcam_dbg_err("Please check videosink element in configuration file");
+			return FALSE;
+		}
 		if (!strcmp(videosink_name, "xvimagesink") || !strcmp(videosink_name, "evasimagesink") ||
 		    !strcmp(videosink_name, "evaspixmapsink")) {
 			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst,
@@ -1998,6 +2123,10 @@ bool _mmcamcorder_set_display_flip(MMHandleType handle, int display_flip)
 	if (sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst) {
 		/* Get videosink name */
 		_mmcamcorder_conf_get_value_element_name(sc->VideosinkElement, &videosink_name);
+		if (videosink_name == NULL) {
+			_mmcam_dbg_err("Please check videosink element in configuration file");
+			return FALSE;
+		}
 		if (!strcmp(videosink_name, "xvimagesink") || !strcmp(videosink_name, "evasimagesink") ||
 		    !strcmp(videosink_name, "evaspixmapsink")) {
 			MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSINK_SINK].gst,
@@ -2156,7 +2285,7 @@ bool _mmcamcorder_set_videosrc_caps(MMHandleType handle, unsigned int fourcc, in
 			int caps_fps = 0;
 			int caps_rotate = 0;
 
-			gst_structure_get_fourcc(structure, "format", &caps_fourcc);
+			caps_fourcc = _mmcamcorder_convert_fourcc_string_to_value(gst_structure_get_string(structure, "format"));
 			gst_structure_get_int(structure, "width", &caps_width);
 			gst_structure_get_int(structure, "height", &caps_height);
 			gst_structure_get_int(structure, "fps", &caps_fps);
@@ -2188,19 +2317,31 @@ bool _mmcamcorder_set_videosrc_caps(MMHandleType handle, unsigned int fourcc, in
 	}
 
 	if (do_set_caps) {
-		caps = gst_caps_new_simple("video/x-raw-yuv",
-		                           "format", GST_TYPE_FOURCC, fourcc,
-		                           "width", G_TYPE_INT, set_width,
-		                           "height", G_TYPE_INT, set_height,
-		                           "framerate", GST_TYPE_FRACTION, fps, 1,
-		                           "rotate", G_TYPE_INT, set_rotate,
-		                           NULL);
-		MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_FILT].gst, "caps", caps);
+		char fourcc_string[sizeof(fourcc)+1];
+		strncpy(fourcc_string, (char*)&fourcc, sizeof(fourcc));
+		fourcc_string[sizeof(fourcc)] = '\0';
+
+		if (sc->info_image->preview_format == MM_PIXEL_FORMAT_ENCODED_H264) {
+			caps = gst_caps_new_simple("video/x-h264",
+			                           "width", G_TYPE_INT, set_width,
+			                           "height", G_TYPE_INT, set_height,
+			                           "framerate", GST_TYPE_FRACTION, fps, 1,
+			                           "stream-format", G_TYPE_STRING, "byte-stream",
+			                           NULL);
+		} else {
+			caps = gst_caps_new_simple("video/x-raw",
+					"format", G_TYPE_STRING, fourcc_string,
+					"width", G_TYPE_INT, set_width,
+					"height", G_TYPE_INT, set_height,
+					"framerate", GST_TYPE_FRACTION, fps, 1,
+					"rotate", G_TYPE_INT, set_rotate,
+					NULL);
+		}
+
+		_mmcam_dbg_log("vidoesrc new caps set. %"GST_PTR_FORMAT, caps);
+		MMCAMCORDER_G_OBJECT_SET_POINTER(sc->element[_MMCAMCORDER_VIDEOSRC_FILT].gst, "caps", caps);
 		gst_caps_unref(caps);
 		caps = NULL;
-		_mmcam_dbg_log("vidoesrc new caps set. [%c%c%c%c %dx%d, fps %d, rotate %d]",
-		               (sc->fourcc), (sc->fourcc)>>8, (sc->fourcc)>>16, (sc->fourcc)>>24,
-		               set_width, set_height, fps, set_rotate);
 	}
 
 	if (hcamcorder->type != MM_CAMCORDER_MODE_AUDIO) {
@@ -2379,4 +2520,185 @@ bool _mmcamcorder_set_camera_resolution(MMHandleType handle, int width, int heig
 	_mmcam_dbg_log("set %dx%d", width, height);
 
 	return _mmcamcorder_set_videosrc_caps(handle, sc->fourcc, width, height, fps, sc->videosrc_rotate);
+}
+bool _mmcamcorder_set_encoded_preview_bitrate(MMHandleType handle, int bitrate)
+{
+	_MMCamcorderSubContext *sc = NULL;
+	GstCameraControl *CameraControl = NULL;
+	GstCameraControlChannel *CameraControlChannel = NULL;
+	const GList *controls = NULL;
+	const GList *item = NULL;
+
+	if ((void *)handle == NULL) {
+		_mmcam_dbg_warn("handle is NULL");
+		return FALSE;
+	}
+
+	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
+	if (!sc) {
+		_mmcam_dbg_warn("subcontext is NULL");
+		return FALSE;
+	}
+
+	if (sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst == NULL) {
+		_mmcam_dbg_warn("videosrc plugin is NULL");
+		return FALSE;
+	}
+
+	_mmcam_dbg_log("set encoded preview bitrate : %d bps", bitrate);
+
+	CameraControl = GST_CAMERA_CONTROL(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst);
+	controls = gst_camera_control_list_channels(CameraControl);
+	_mmcam_dbg_log("controls : 0x%x", controls);
+	if (controls != NULL) {
+		_mmcam_dbg_log("controls : 0x%x", controls);
+		for (item = controls ; item && item->data ; item = item->next) {
+			CameraControlChannel = item->data;
+			_mmcam_dbg_log("item : %d", item);
+			if (!strcmp(CameraControlChannel->label, "bitrate")) {
+				_mmcam_dbg_log("set encoded preview bitrate %d", bitrate);
+				return gst_camera_control_set_value(CameraControl, CameraControlChannel, bitrate);
+			}
+		}
+		_mmcam_dbg_log("item : %d", item);
+		if (item == NULL) {
+			_mmcam_dbg_warn("failed to find \"bitrate\" control channel");
+		}
+	}
+	_mmcam_dbg_log("item : %d", item);
+
+	return FALSE;
+}
+
+
+bool _mmcamcorder_set_encoded_preview_iframe_interval(MMHandleType handle, int interval)
+{
+	_MMCamcorderSubContext *sc = NULL;
+
+	if ((void *)handle == NULL) {
+		_mmcam_dbg_warn("handle is NULL");
+		return FALSE;
+	}
+
+	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
+	if (!sc) {
+		_mmcam_dbg_warn("subcontext is NULL");
+		return FALSE;
+	}
+
+	if (sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst == NULL) {
+		_mmcam_dbg_warn("videosrc plugin is NULL");
+		return FALSE;
+	}
+
+	_mmcam_dbg_log("set encoded preview I-frame interval : %d ms", interval);
+
+	MMCAMCORDER_G_OBJECT_SET(sc->element[_MMCAMCORDER_VIDEOSRC_SRC].gst, "newgop-interval", interval);
+
+	return TRUE;
+}
+
+
+bool _mmcamcorder_recreate_decoder_for_encoded_preview(MMHandleType handle)
+{
+	int ret = MM_ERROR_NONE;
+	int device_scaler = 0;
+	_MMCamcorderSubContext *sc = NULL;
+	char decoder_name[20] = {'\0',};
+
+	if ((void *)handle == NULL) {
+		_mmcam_dbg_warn("handle is NULL");
+		return FALSE;
+	}
+
+	sc = MMF_CAMCORDER_SUBCONTEXT(handle);
+	if (!sc) {
+		_mmcam_dbg_warn("subcontext is NULL");
+		return FALSE;
+	}
+
+	if (sc->element[_MMCAMCORDER_MAIN_PIPE].gst == NULL ||
+	    sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst == NULL) {
+		_mmcam_dbg_warn("main pipeline or decoder plugin is NULL");
+		return FALSE;
+	}
+
+	_mmcam_dbg_log("start");
+
+	/* set state as NULL */
+	ret = _mmcamcorder_gst_set_state(handle, sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst, GST_STATE_NULL);
+	if (ret != MM_ERROR_NONE) {
+		_mmcam_dbg_err("failed to set NULL to decoder");
+		return FALSE;
+	}
+
+	/* remove decoder - pads will be unlinked automatically in remove function */
+	if (!gst_bin_remove(GST_BIN(sc->element[_MMCAMCORDER_MAIN_PIPE].gst),
+			    sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst)) {
+		_mmcam_dbg_err("failed to remove decoder from pipeline");
+		return FALSE;
+	}
+
+	/* check decoder element */
+	if (sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst) {
+		_mmcam_dbg_log("decoder[%p] is still alive - ref count %d",
+			       G_OBJECT(sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst),
+			       ((GObject *)sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst)->ref_count);
+	}
+
+	/* get decoder name */
+	mm_camcorder_get_attributes(handle, NULL,
+				    MMCAM_DISPLAY_SCALER, &device_scaler,
+				    NULL);
+
+	snprintf(decoder_name, sizeof(decoder_name)-1, "%s%d", _MMCAMCORDER_VIDEO_DECODER_NAME_PREFIX, device_scaler);
+
+	_mmcam_dbg_log("decoder name [%s]", decoder_name);
+
+	/* create decoder */
+	sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst = gst_element_factory_make(decoder_name, "videosrc_decode");
+	if (sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst == NULL) {
+		_mmcam_dbg_err("Decoder[%s] creation fail", decoder_name);
+		return FALSE;
+	}
+
+	sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].id = _MMCAMCORDER_VIDEOSRC_DECODE;
+	g_object_weak_ref(G_OBJECT(sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst),
+			  (GWeakNotify)_mmcamcorder_element_release_noti, sc);
+
+	/* add to pipeline */
+	if (!gst_bin_add(GST_BIN(sc->element[_MMCAMCORDER_MAIN_PIPE].gst),
+			 sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst)) {
+		_mmcam_dbg_err("failed to add decoder to pipeline");
+		gst_object_unref(sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst);
+		return FALSE;
+	}
+
+	/* link */
+	if (_MM_GST_ELEMENT_LINK(GST_ELEMENT(sc->element[_MMCAMCORDER_VIDEOSRC_QUE].gst),
+				 GST_ELEMENT(sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst))) {
+		_mmcam_dbg_log("Link videosrc_queue to decoder OK");
+	} else {
+		_mmcam_dbg_err("Link videosrc_queue to decoder FAILED");
+		return FALSE;
+	}
+
+	if (_MM_GST_ELEMENT_LINK(GST_ELEMENT(sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst),
+				 GST_ELEMENT(sc->element[_MMCAMCORDER_VIDEOSINK_QUE].gst))) {
+		_mmcam_dbg_log("Link decoder to videosink_queue OK");
+	} else {
+		_mmcam_dbg_err("Link decoder to videosink_queue FAILED");
+		return FALSE;
+	}
+
+	/* set state READY */
+	ret = _mmcamcorder_gst_set_state(handle, sc->element[_MMCAMCORDER_VIDEOSRC_DECODE].gst, GST_STATE_READY);
+	if (ret != MM_ERROR_NONE) {
+		_mmcam_dbg_err("failed to set READY to decoder");
+		return FALSE;
+	}
+
+	_mmcam_dbg_log("done");
+
+	return TRUE;
 }

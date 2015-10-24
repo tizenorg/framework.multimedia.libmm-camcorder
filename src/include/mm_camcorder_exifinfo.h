@@ -87,7 +87,7 @@ ExifData *mm_exif_get_exif_from_info(mm_exif_info_t *info);
 int mm_exif_set_exif_to_info(mm_exif_info_t *info, ExifData *exif);
 
 /**
- * add one tag information into exif 
+ * add one tag information into exif
  *  @param[in] info exif info.
  *  @param[in] Exif tag .
  *  @param[in] tag content category.

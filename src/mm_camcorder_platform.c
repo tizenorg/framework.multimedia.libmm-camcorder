@@ -221,6 +221,18 @@ _MMCamcorderEnumConvert _mmcamcorder_enum_conv_detect_mode =
  * For detail information, refer below documents.
  *
  */
+static _MMCamcorderInfoConverting	g_audio_info[] = {
+	{
+		CONFIGURE_TYPE_MAIN,
+		CONFIGURE_CATEGORY_MAIN_AUDIO_INPUT,
+		MM_CAM_AUDIO_DEVICE,
+		MM_CAMCORDER_ATTR_NONE,
+		"AudioDevice",
+		MM_CAMCONVERT_TYPE_INT_ARRAY,
+		NULL,
+	}
+};
+
 static _MMCamcorderInfoConverting	g_display_info[] = {
 	{
 		CONFIGURE_TYPE_MAIN,
@@ -280,15 +292,6 @@ static _MMCamcorderInfoConverting	g_caminfo_convert[CAMINFO_CONVERT_NUM] = {
 		NULL,
 	},
 	{
-		CONFIGURE_TYPE_CTRL,
-		CONFIGURE_CATEGORY_CTRL_CAMERA,
-		MM_CAM_CAMERA_FPS,
-		MM_CAMCORDER_ATTR_NONE,
-		"FPS",
-		MM_CAMCONVERT_TYPE_INT_ARRAY,
-		NULL,
-	},
-	{ /* 5 */
 		CONFIGURE_TYPE_CTRL,
 		CONFIGURE_CATEGORY_CTRL_CAMERA,
 		MM_CAM_CAMERA_FORMAT,
@@ -689,6 +692,68 @@ int _mmcamcorder_convert_msl_to_sensor(MMHandleType handle, int attr_idx, int ms
 	return mslval;
 }
 
+int _mmcamcorder_get_fps_array_by_resolution(MMHandleType handle, int width, int height,  MMCamAttrsInfo* fps_info)
+{
+	MMCamAttrsInfo *infoW = NULL;
+	MMCamAttrsInfo *infoH = NULL;
+	int i = 0;
+	char nameFps[5] = {0,};
+	bool valid_check = false;
+
+	type_int_array *fps_array;
+
+	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
+
+	//_mmcam_dbg_log("prev resolution w:%d, h:%d", width, height);
+
+	infoW = (MMCamAttrsInfo*)calloc(1, sizeof(MMCamAttrsInfo));
+	infoH = (MMCamAttrsInfo*)calloc(1, sizeof(MMCamAttrsInfo));
+
+	if(infoW == NULL || infoH == NULL) {
+		_mmcam_dbg_err("Fail to alloc infoW [%p], infoH [%p]", infoW, infoH);
+		if(infoW)
+			free(infoW);
+		if(infoH)
+			free(infoH);
+
+		return MM_ERROR_COMMON_OUT_OF_MEMORY;
+	}
+
+	mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_WIDTH, infoW);
+	mm_camcorder_get_attribute_info(handle, MMCAM_CAMERA_HEIGHT, infoH);
+
+	for(i=0; i < infoW->int_array.count; i++) {
+		//_mmcam_dbg_log("width :%d, height : %d\n", infoW->int_array.array[i], infoH->int_array.array[i]);
+		if(infoW->int_array.array[i] == width && infoH->int_array.array[i] == height) {
+			valid_check = true;
+			snprintf(nameFps,sizeof(nameFps), "FPS%d", i);
+			_mmcam_dbg_log("nameFps : %s!!!", nameFps);
+			break;
+		}
+	}
+
+	if(infoW)
+		free(infoW);
+	if(infoH)
+		free(infoH);
+
+	if(!valid_check) {
+		_mmcam_dbg_err("FAILED : Can't find the valid resolution from attribute.");
+		return MM_ERROR_CAMCORDER_NOT_SUPPORTED;
+	}
+
+	if (!_mmcamcorder_conf_get_value_int_array(hcamcorder->conf_ctrl, CONFIGURE_CATEGORY_CTRL_CAMERA, nameFps, &fps_array)) {
+		_mmcam_dbg_err("FAILED : Can't find the valid FPS array.");
+		return MM_ERROR_CAMCORDER_CREATE_CONFIGURE;
+	}
+
+	fps_info->int_array.count = fps_array->count;
+	fps_info->int_array.array = fps_array->value;
+	fps_info->int_array.def = fps_array->default_value;
+
+	return MM_ERROR_NONE;
+}
+
 //convert sensor value to MSL value
 int _mmcamcorder_convert_sensor_to_msl(MMHandleType handle, int attr_idx, int sensval)
 {
@@ -700,7 +765,7 @@ int _mmcamcorder_convert_sensor_to_msl(MMHandleType handle, int attr_idx, int se
 	mmf_return_val_if_fail(hcamcorder, MM_ERROR_CAMCORDER_NOT_INITIALIZED);
 
 	info = hcamcorder->caminfo_convert;
-	
+
 	for( i = 0 ; i < size ; i++ )
 	{
 		if( info[i].attr_idx == attr_idx )
@@ -745,7 +810,7 @@ __mmcamcorder_get_valid_array(int * original_array, int original_count, int ** v
 	int i = 0;
 	int valid_count = 0;
 	int new_default = _MMCAMCORDER_SENSOR_ENUM_NONE;
-	
+
 	for (i = 0; i < original_count; i++) {
 		if (original_array[i] != _MMCAMCORDER_SENSOR_ENUM_NONE) {
 			valid_count++;
@@ -783,7 +848,7 @@ __mmcamcorder_get_valid_array(int * original_array, int original_count, int ** v
 }
 
 
-int _mmcamcorder_init_attr_from_configure(MMHandleType handle)
+int _mmcamcorder_init_attr_from_configure(MMHandleType handle, int type)
 {
 	mmf_camcorder_t *hcamcorder = MMF_CAMCORDER(handle);
 	_MMCamcorderInfoConverting *info = NULL;
@@ -793,23 +858,38 @@ int _mmcamcorder_init_attr_from_configure(MMHandleType handle)
 
 	mmf_return_val_if_fail(hcamcorder, MM_ERROR_CAMCORDER_NOT_INITIALIZED);
 
-	_mmcam_dbg_log("");
+	_mmcam_dbg_log("type : %d", type);
 
-	/* Initialize attribute related to camera control */
-	info = hcamcorder->caminfo_convert;
-	table_size = sizeof(g_caminfo_convert) / sizeof(_MMCamcorderInfoConverting);
-	ret = __mmcamcorder_set_info_to_attr( handle, info, table_size );
-	if( ret != MM_ERROR_NONE )
-	{
-		_mmcam_dbg_err( "ret : %x", ret );
+	if (type != MM_VIDEO_DEVICE_NONE) {
+		/* Initialize attribute related to camera control */
+		info = hcamcorder->caminfo_convert;
+		table_size = sizeof(g_caminfo_convert) / sizeof(_MMCamcorderInfoConverting);
+		ret = __mmcamcorder_set_info_to_attr( handle, info, table_size );
+		if (ret != MM_ERROR_NONE) {
+			_mmcam_dbg_err("camera info set error : 0x%x", ret);
+			return ret;
+		}
+
+		/* Initialize attribute related to display */
+		info = g_display_info;
+		table_size = sizeof(g_display_info) / sizeof(_MMCamcorderInfoConverting);
+		ret = __mmcamcorder_set_info_to_attr( handle, info, table_size );
+		if (ret != MM_ERROR_NONE) {
+			_mmcam_dbg_err("display info set error : 0x%x", ret);
+			return ret;
+		}
+	}
+
+	/* Initialize attribute related to audio */
+	info = g_audio_info;
+	table_size = sizeof(g_audio_info) / sizeof(_MMCamcorderInfoConverting);
+	ret = __mmcamcorder_set_info_to_attr(handle, info, table_size);
+	if (ret != MM_ERROR_NONE) {
+		_mmcam_dbg_err("audio info set error : 0x%x", ret);
 		return ret;
 	}
 
-	/* Initialize attribute related to display */
-	info = g_display_info;
-	table_size = sizeof(g_display_info) / sizeof(_MMCamcorderInfoConverting);
-	ret = __mmcamcorder_set_info_to_attr( handle, info, table_size );
-	_mmcam_dbg_log( "result: %x", ret );
+	_mmcam_dbg_log("done");
 
 	return ret;
 }
@@ -845,16 +925,12 @@ __mmcamcorder_set_info_to_attr( MMHandleType handle, _MMCamcorderInfoConverting 
 		if( info[i].type == CONFIGURE_TYPE_MAIN )
 		{
 			conf_info = hcamcorder->conf_main;
-			/*
-			_mmcam_dbg_log( "MAIN configure [%s]", info[i].keyword );
-			*/
+			/*_mmcam_dbg_log( "MAIN configure [%s]", info[i].keyword );*/
 		}
 		else
 		{
 			conf_info = hcamcorder->conf_ctrl;
-			/*
-			_mmcam_dbg_log( "CTRL configure [%s]", info[i].keyword );
-			*/
+			/*_mmcam_dbg_log( "CTRL configure [%s]", info[i].keyword );*/
 		}
 
 		switch(info[i].conv_type)
@@ -890,7 +966,7 @@ __mmcamcorder_set_info_to_attr( MMHandleType handle, _MMCamcorderInfoConverting 
 				if( tarray )
 				{
 					idefault = tarray->default_value;
-					
+
 					if( info[i].enum_convert )
 					{
 						iarray_size = __mmcamcorder_get_valid_array(tarray->value, tarray->count, &iarray, &idefault);
@@ -968,7 +1044,7 @@ __mmcamcorder_set_info_to_attr( MMHandleType handle, _MMCamcorderInfoConverting 
 			{
 				type_int_pair_array *pair_array = NULL;
 
-				//_mmcam_dbg_log("INT PAIR Array. type:%d, attr_idx:%d, attr_idx_pair:%d", info[i].type, info[i].attr_idx, info[i].attr_idx_pair);
+				/*_mmcam_dbg_log("INT PAIR Array. type:%d, attr_idx:%d, attr_idx_pair:%d", info[i].type, info[i].attr_idx, info[i].attr_idx_pair);*/
 
 				if (!_mmcamcorder_conf_get_value_int_pair_array(conf_info, info[i].category, info[i].keyword, &pair_array))
 				{
@@ -1006,7 +1082,7 @@ __mmcamcorder_set_info_to_attr( MMHandleType handle, _MMCamcorderInfoConverting 
 
 	if (ret != MM_ERROR_NONE || mmf_attrs_commit(attrs) == -1)
 		return MM_ERROR_CAMCORDER_INVALID_ARGUMENT;
-	else	
+	else
 		return MM_ERROR_NONE;
 }
 

@@ -1,6 +1,6 @@
 Name:       libmm-camcorder
 Summary:    Camera and recorder library
-Version:    0.9.64
+Version:    0.9.125
 Release:    0
 Group:      libdevel
 License:    Apache-2.0
@@ -8,21 +8,26 @@ Source0:    %{name}-%{version}.tar.gz
 Requires(post): /usr/bin/vconftool
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
+BuildRequires:  pkgconfig(glib-2.0)
+BuildRequires:  pkgconfig(gio-2.0)
 BuildRequires:  pkgconfig(capi-system-info)
 BuildRequires:  pkgconfig(mm-common)
 BuildRequires:  pkgconfig(mm-sound)
 BuildRequires:  pkgconfig(libexif)
 BuildRequires:  pkgconfig(mmutil-imgp)
-BuildRequires:  pkgconfig(gstreamer-plugins-base-0.10)
-BuildRequires:  pkgconfig(gstreamer-app-0.10)
+BuildRequires:  pkgconfig(mmutil-jpeg)
+BuildRequires:  pkgconfig(gstreamer-base-1.0)
+BuildRequires:  pkgconfig(gstreamer-video-1.0)
+BuildRequires:  pkgconfig(gstreamer-app-1.0)
 BuildRequires:  pkgconfig(sndfile)
 BuildRequires:  pkgconfig(mm-session)
 BuildRequires:  pkgconfig(audio-session-mgr)
-BuildRequires:  pkgconfig(camsrcjpegenc)
 BuildRequires:  pkgconfig(libpulse)
 BuildRequires:  pkgconfig(vconf)
-BuildRequires:  gst-plugins-base-devel
-BuildRequires:  pkgconfig(dbus-1)
+BuildRequires:  gstreamer1.0-devel
+BuildRequires:  pkgconfig(ttrace)
+BuildRequires:  pkgconfig(libtbm)
+BuildRequires:  pkgconfig(storage)
 
 %description
 Camera and recorder library.
@@ -34,19 +39,19 @@ Group:      libdevel
 Version:    %{version}
 Requires:   %{name} = %{version}-%{release}
 
-%description devel 
+%description devel
 Camera and recorder development library.
 
 
 %prep
-%setup -q 
+%setup -q
 
 
 %build
 %if 0%{?sec_build_binary_debug_enable}
 export CFLAGS+=" -DTIZEN_DEBUG_ENABLE"
 %endif
-export CFLAGS+=" -Wall -Wcast-qual -Wextra -Wno-array-bounds -Wno-empty-body -Wno-ignored-qualifiers -Wno-unused-parameter -Wshadow -Wwrite-strings -Wswitch-default -Wno-unused-but-set-parameter -Wno-unused-but-set-variable"
+export CFLAGS+=" -Wall -Wextra -Wno-array-bounds -Wno-empty-body -Wno-ignored-qualifiers -Wno-unused-parameter -Wshadow -Wwrite-strings -Wswitch-default -Wno-unused-but-set-parameter -Wno-unused-but-set-variable -D_LARGEFILE64_SOURCE"
 #export CFLAGS+=" -Werror"
 ./autogen.sh
 %configure \
@@ -63,9 +68,6 @@ cp LICENSE.APLv2 %{buildroot}/usr/share/license/%{name}
 %post
 /sbin/ldconfig
 
-vconftool set -t int memory/camera/state 0 -i -u 5000 -s system::vconf_multimedia
-vconftool set -t int memory/recorder/state 0 -i -u 5000 -s system::vconf_multimedia
-vconftool set -t int file/camera/shutter_sound_policy 0 -u 5000 -s system::vconf_inhouse
 chsmack -a "device::camera" /usr/share/sounds/mm-camcorder/camera_resource
 chsmack -a "pulseaudio::record" /usr/share/sounds/mm-camcorder/recorder_resource
 

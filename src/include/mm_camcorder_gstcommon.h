@@ -149,8 +149,8 @@ int _mmcamcorder_create_encodesink_bin(MMHandleType handle, MMCamcorderEncodebin
 int _mmcamcorder_create_preview_pipeline(MMHandleType handle);
 
 /* plug-in related */
-void _mmcamcorder_negosig_handler(GstElement *videosrc, MMHandleType handle);
 void _mmcamcorder_ready_to_encode_callback(GstElement *element, guint size, gpointer handle);
+bool _mmcamcorder_recreate_decoder_for_encoded_preview(MMHandleType handle);
 
 /* etc */
 int _mmcamcorder_videosink_window_set(MMHandleType handle, type_element *VideosinkElement);
@@ -168,6 +168,8 @@ bool _mmcamcorder_set_videosrc_flip(MMHandleType handle, int viderosrc_flip);
 bool _mmcamcorder_set_videosrc_anti_shake(MMHandleType handle, int anti_shake);
 bool _mmcamcorder_set_videosrc_stabilization(MMHandleType handle, int stabilization);
 bool _mmcamcorder_set_camera_resolution(MMHandleType handle, int width, int height);
+bool _mmcamcorder_set_encoded_preview_bitrate(MMHandleType handle, int bitrate);
+bool _mmcamcorder_set_encoded_preview_iframe_interval(MMHandleType handle, int interval);
 
 #ifdef __cplusplus
 }
